@@ -32,7 +32,7 @@ const menuItems = [
   { title: 'Expenses', url: '/expenses', icon: Receipt },
   { title: 'Salaries', url: '/salaries', icon: DollarSign },
   { title: 'Reports', url: '/reports', icon: BarChart3 },
-  { title: 'Fee Folders', url: '/fee-folders', icon: FolderOpen },
+  { title: 'Remaining Fees', url: '/remaining-fees', icon: FolderOpen },
 ];
 
 export function AppSidebar() {
