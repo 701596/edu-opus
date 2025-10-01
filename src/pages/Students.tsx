@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,7 +10,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Users } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const studentSchema = z.object({
   student_id: z.string().min(1, 'Student ID is required'),
@@ -34,6 +34,7 @@ const Students = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
 
   const form = useForm<z.infer<typeof studentSchema>>({
     resolver: zodResolver(studentSchema),
@@ -53,6 +54,26 @@ const Students = () => {
 
   useEffect(() => {
     fetchStudents();
+    
+    // Real-time subscription
+    const channel = supabase
+      .channel('students-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'students',
+        },
+        () => {
+          fetchStudents();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchStudents = async () => {
@@ -182,10 +203,15 @@ const Students = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Students</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Users className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+              Students
+            </h1>
+          </div>
           <p className="text-muted-foreground">Manage student enrollment and information</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
@@ -358,7 +384,7 @@ const Students = () => {
         </Dialog>
       </div>
 
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle>Students List</CardTitle>
         </CardHeader>
@@ -389,7 +415,7 @@ const Students = () => {
                       <TableCell>{student.name}</TableCell>
                       <TableCell>{student.email || '-'}</TableCell>
                       <TableCell>{student.grade_level || '-'}</TableCell>
-                      <TableCell>${Number(student.fees_amount || 0).toFixed(2)}</TableCell>
+                      <TableCell className="font-semibold text-primary">{formatAmount(Number(student.fees_amount || 0))}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button

@@ -10,7 +10,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Briefcase } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const staffSchema = z.object({
   staff_id: z.string().min(1, 'Staff ID is required'),
@@ -32,6 +33,7 @@ const Staff = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
 
   const form = useForm<z.infer<typeof staffSchema>>({
     resolver: zodResolver(staffSchema),
@@ -50,6 +52,26 @@ const Staff = () => {
 
   useEffect(() => {
     fetchStaff();
+    
+    // Real-time subscription
+    const channel = supabase
+      .channel('staff-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'staff',
+        },
+        () => {
+          fetchStaff();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchStaff = async () => {
@@ -174,10 +196,15 @@ const Staff = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Staff</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Briefcase className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+              Staff
+            </h1>
+          </div>
           <p className="text-muted-foreground">Manage staff members and employees</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
@@ -337,7 +364,7 @@ const Staff = () => {
         </Dialog>
       </div>
 
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle>Staff List</CardTitle>
         </CardHeader>
@@ -368,7 +395,7 @@ const Staff = () => {
                       <TableCell>{staffMember.name}</TableCell>
                       <TableCell>{staffMember.position}</TableCell>
                       <TableCell>{staffMember.department || '-'}</TableCell>
-                      <TableCell>${Number(staffMember.salary).toLocaleString()}</TableCell>
+                      <TableCell className="font-semibold text-primary">{formatAmount(Number(staffMember.salary))}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button

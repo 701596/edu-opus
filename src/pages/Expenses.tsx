@@ -10,7 +10,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Receipt } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const expenseSchema = z.object({
   description: z.string().min(1, 'Description is required'),
@@ -29,6 +30,7 @@ const Expenses = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
 
   const form = useForm<z.infer<typeof expenseSchema>>({
     resolver: zodResolver(expenseSchema),
@@ -44,6 +46,26 @@ const Expenses = () => {
 
   useEffect(() => {
     fetchExpenses();
+    
+    // Real-time subscription
+    const channel = supabase
+      .channel('expenses-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'expenses',
+        },
+        () => {
+          fetchExpenses();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchExpenses = async () => {
@@ -160,10 +182,15 @@ const Expenses = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Expenses</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Receipt className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+              Expenses
+            </h1>
+          </div>
           <p className="text-muted-foreground">Track operational costs and expenditures</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
@@ -278,7 +305,7 @@ const Expenses = () => {
         </Dialog>
       </div>
 
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle>Expenses List</CardTitle>
         </CardHeader>
@@ -307,7 +334,7 @@ const Expenses = () => {
                     <TableRow key={expense.id}>
                       <TableCell className="font-medium">{expense.description}</TableCell>
                       <TableCell>{expense.category}</TableCell>
-                      <TableCell>${Number(expense.amount).toFixed(2)}</TableCell>
+                      <TableCell className="font-semibold text-primary">{formatAmount(Number(expense.amount))}</TableCell>
                       <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
                       <TableCell>{expense.vendor || '-'}</TableCell>
                       <TableCell>

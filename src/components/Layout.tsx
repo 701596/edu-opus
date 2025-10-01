@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
+import { CurrencySelector } from '@/components/CurrencySelector';
 
 interface LayoutProps {
   children: ReactNode;
@@ -28,11 +29,16 @@ const Layout = ({ children }: LayoutProps) => {
       <div className="min-h-screen flex w-full bg-background">
         <AppSidebar />
         <div className="flex-1 flex flex-col">
-          <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center px-6">
-            <SidebarTrigger className="mr-4" />
-            <h1 className="text-xl font-semibold text-foreground">Student Management System</h1>
+          <header className="h-16 border-b border-border bg-card/50 backdrop-blur-sm flex items-center justify-between px-6">
+            <div className="flex items-center gap-4">
+              <SidebarTrigger />
+              <h1 className="text-xl font-semibold text-foreground bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+                Financial Management
+              </h1>
+            </div>
+            <CurrencySelector />
           </header>
-          <main className="flex-1 p-6">
+          <main className="flex-1 p-6 animate-fade-in">
             {children}
           </main>
         </div>
