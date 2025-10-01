@@ -14,7 +14,273 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          description: string
+          expense_date: string
+          id: string
+          receipt_number: string
+          updated_at: string
+          vendor: string
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          description: string
+          expense_date?: string
+          id?: string
+          receipt_number: string
+          updated_at?: string
+          vendor: string
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          description?: string
+          expense_date?: string
+          id?: string
+          receipt_number?: string
+          updated_at?: string
+          vendor?: string
+        }
+        Relationships: []
+      }
+      fee_folders: {
+        Row: {
+          amount_due: number
+          amount_paid: number | null
+          category: string
+          created_at: string
+          due_date: string
+          folder_name: string
+          id: string
+          status: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_due: number
+          amount_paid?: number | null
+          category: string
+          created_at?: string
+          due_date: string
+          folder_name: string
+          id?: string
+          status?: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_due?: number
+          amount_paid?: number | null
+          category?: string
+          created_at?: string
+          due_date?: string
+          folder_name?: string
+          id?: string
+          status?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fee_folders_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          payment_date: string
+          payment_method: string
+          receipt_number: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          payment_date?: string
+          payment_method: string
+          receipt_number: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          payment_date?: string
+          payment_method?: string
+          receipt_number?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      salaries: {
+        Row: {
+          amount: number
+          bonus: number | null
+          created_at: string
+          deductions: number | null
+          id: string
+          net_amount: number
+          pay_period_end: string
+          pay_period_start: string
+          payment_date: string
+          staff_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          bonus?: number | null
+          created_at?: string
+          deductions?: number | null
+          id?: string
+          net_amount: number
+          pay_period_end: string
+          pay_period_start: string
+          payment_date?: string
+          staff_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          bonus?: number | null
+          created_at?: string
+          deductions?: number | null
+          id?: string
+          net_amount?: number
+          pay_period_end?: string
+          pay_period_start?: string
+          payment_date?: string
+          staff_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "salaries_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff: {
+        Row: {
+          address: string
+          created_at: string
+          department: string
+          email: string
+          hire_date: string
+          id: string
+          name: string
+          phone: string
+          position: string
+          salary: number
+          staff_id: string
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          department: string
+          email: string
+          hire_date: string
+          id?: string
+          name: string
+          phone: string
+          position: string
+          salary: number
+          staff_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          department?: string
+          email?: string
+          hire_date?: string
+          id?: string
+          name?: string
+          phone?: string
+          position?: string
+          salary?: number
+          staff_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      students: {
+        Row: {
+          address: string
+          created_at: string
+          date_of_birth: string
+          email: string
+          enrollment_date: string
+          guardian_name: string
+          guardian_phone: string
+          id: string
+          name: string
+          phone: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          date_of_birth: string
+          email: string
+          enrollment_date?: string
+          guardian_name: string
+          guardian_phone: string
+          id?: string
+          name: string
+          phone: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          date_of_birth?: string
+          email?: string
+          enrollment_date?: string
+          guardian_name?: string
+          guardian_phone?: string
+          id?: string
+          name?: string
+          phone?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
