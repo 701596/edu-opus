@@ -11,7 +11,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Banknote } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const salarySchema = z.object({
   staff_id: z.string().min(1, 'Staff member is required'),
@@ -33,6 +34,7 @@ const Salaries = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSalary, setEditingSalary] = useState<Salary | null>(null);
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
 
   const form = useForm<z.infer<typeof salarySchema>>({
     resolver: zodResolver(salarySchema),
@@ -59,6 +61,26 @@ const Salaries = () => {
   useEffect(() => {
     fetchSalaries();
     fetchStaff();
+    
+    // Real-time subscription
+    const channel = supabase
+      .channel('salaries-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'salaries',
+        },
+        () => {
+          fetchSalaries();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchSalaries = async () => {
@@ -199,10 +221,15 @@ const Salaries = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Salaries</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Banknote className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+              Salaries
+            </h1>
+          </div>
           <p className="text-muted-foreground">Manage staff salary payments</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
@@ -373,7 +400,7 @@ const Salaries = () => {
         </Dialog>
       </div>
 
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle>Salaries List</CardTitle>
         </CardHeader>
@@ -407,10 +434,10 @@ const Salaries = () => {
                       <TableCell>
                         {new Date(salary.pay_period_start).toLocaleDateString()} - {new Date(salary.pay_period_end).toLocaleDateString()}
                       </TableCell>
-                      <TableCell>${Number(salary.amount).toFixed(2)}</TableCell>
-                      <TableCell>${Number(salary.bonus || 0).toFixed(2)}</TableCell>
-                      <TableCell>${Number(salary.deductions || 0).toFixed(2)}</TableCell>
-                      <TableCell className="font-medium">${Number(salary.net_amount).toFixed(2)}</TableCell>
+                      <TableCell>{formatAmount(Number(salary.amount))}</TableCell>
+                      <TableCell className="text-green-600">{formatAmount(Number(salary.bonus || 0))}</TableCell>
+                      <TableCell className="text-destructive">{formatAmount(Number(salary.deductions || 0))}</TableCell>
+                      <TableCell className="font-semibold text-primary">{formatAmount(Number(salary.net_amount))}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button

@@ -11,7 +11,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, Wallet } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const paymentSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
@@ -31,6 +32,7 @@ const Payments = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
 
   const form = useForm<z.infer<typeof paymentSchema>>({
     resolver: zodResolver(paymentSchema),
@@ -47,6 +49,26 @@ const Payments = () => {
   useEffect(() => {
     fetchPayments();
     fetchStudents();
+    
+    // Real-time subscription
+    const channel = supabase
+      .channel('payments-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'payments',
+        },
+        () => {
+          fetchPayments();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchPayments = async () => {
@@ -182,10 +204,15 @@ const Payments = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Payments</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+              Payments
+            </h1>
+          </div>
           <p className="text-muted-foreground">Track student fee payments</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
@@ -322,7 +349,7 @@ const Payments = () => {
         </Dialog>
       </div>
 
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle>Payments List</CardTitle>
         </CardHeader>
@@ -352,7 +379,7 @@ const Payments = () => {
                       <TableCell className="font-medium">
                         {payment.students?.name || 'Unknown Student'}
                       </TableCell>
-                      <TableCell>${Number(payment.amount).toFixed(2)}</TableCell>
+                      <TableCell className="font-semibold text-primary">{formatAmount(Number(payment.amount))}</TableCell>
                       <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
                       <TableCell className="capitalize">{payment.payment_method.replace('_', ' ')}</TableCell>
                       <TableCell>{payment.receipt_number || '-'}</TableCell>

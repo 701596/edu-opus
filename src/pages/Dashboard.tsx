@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
-import { Users, UserCheck, CreditCard, TrendingUp, DollarSign, Receipt } from 'lucide-react';
+import { Users, UserCheck, CreditCard, TrendingUp, DollarSign, Receipt, LayoutDashboard } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 interface DashboardStats {
@@ -27,9 +28,38 @@ const Dashboard = () => {
     paymentMethods: [],
   });
   const [loading, setLoading] = useState(true);
+  const { formatAmount } = useCurrency();
 
   useEffect(() => {
     fetchDashboardData();
+    
+    // Real-time subscriptions for all tables
+    const paymentsChannel = supabase
+      .channel('dashboard-payments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchDashboardData)
+      .subscribe();
+    
+    const expensesChannel = supabase
+      .channel('dashboard-expenses')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, fetchDashboardData)
+      .subscribe();
+    
+    const studentsChannel = supabase
+      .channel('dashboard-students')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchDashboardData)
+      .subscribe();
+    
+    const staffChannel = supabase
+      .channel('dashboard-staff')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchDashboardData)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(paymentsChannel);
+      supabase.removeChannel(expensesChannel);
+      supabase.removeChannel(studentsChannel);
+      supabase.removeChannel(staffChannel);
+    };
   }, []);
 
   const fetchDashboardData = async () => {
@@ -127,16 +157,21 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <LayoutDashboard className="w-8 h-8 text-primary" />
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+            Dashboard
+          </h1>
+        </div>
         <p className="text-muted-foreground">Overview of your institution's performance</p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Students</CardTitle>
             <Users className="h-4 w-4 text-primary" />
@@ -147,7 +182,7 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Staff</CardTitle>
             <UserCheck className="h-4 w-4 text-primary" />
@@ -158,42 +193,42 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Income</CardTitle>
             <CreditCard className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${stats.totalPayments.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalPayments)}</div>
             <p className="text-xs text-muted-foreground">From student payments</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Expenses</CardTitle>
             <Receipt className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${stats.totalExpenses.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalExpenses)}</div>
             <p className="text-xs text-muted-foreground">Operational costs</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Net Income</CardTitle>
             <TrendingUp className={`h-4 w-4 ${stats.netIncome >= 0 ? 'text-green-500' : 'text-destructive'}`} />
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${stats.netIncome >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-              ${stats.netIncome.toLocaleString()}
+              {formatAmount(stats.netIncome)}
             </div>
             <p className="text-xs text-muted-foreground">Profit/Loss</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Profit Margin</CardTitle>
             <DollarSign className="h-4 w-4 text-primary" />
@@ -209,7 +244,7 @@ const Dashboard = () => {
 
       {/* Charts */}
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader>
             <CardTitle className="text-foreground">Monthly Income vs Expenses</CardTitle>
           </CardHeader>
@@ -233,7 +268,7 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader>
             <CardTitle className="text-foreground">Payment Methods</CardTitle>
           </CardHeader>

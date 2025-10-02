@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Users, Receipt, CreditCard } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Users, Receipt, CreditCard, BarChart3 } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 interface ReportData {
   totalIncome: number;
@@ -33,6 +34,7 @@ const Reports = () => {
     paymentMethods: [],
   });
   const [loading, setLoading] = useState(true);
+  const { formatAmount } = useCurrency();
 
   useEffect(() => {
     fetchReportData();
@@ -165,49 +167,54 @@ const Reports = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Reports</h1>
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-8 h-8 text-primary" />
+          <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+            Reports
+          </h1>
+        </div>
         <p className="text-muted-foreground">Financial overview and analytics</p>
       </div>
 
       {/* Key Metrics */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Income</CardTitle>
             <CreditCard className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${reportData.totalIncome.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalIncome)}</div>
             <p className="text-xs text-muted-foreground">From all payments</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Expenses</CardTitle>
             <Receipt className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${reportData.totalExpenses.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalExpenses)}</div>
             <p className="text-xs text-muted-foreground">Operational costs</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Salaries</CardTitle>
             <Users className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${reportData.totalSalaries.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalSalaries)}</div>
             <p className="text-xs text-muted-foreground">Staff payments</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Net Profit</CardTitle>
             {reportData.netProfit >= 0 ? (
@@ -218,7 +225,7 @@ const Reports = () => {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${reportData.netProfit >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-              ${reportData.netProfit.toLocaleString()}
+              {formatAmount(reportData.netProfit)}
             </div>
             <p className="text-xs text-muted-foreground">{reportData.profitMargin.toFixed(1)}% margin</p>
           </CardContent>
@@ -227,24 +234,24 @@ const Reports = () => {
 
       {/* Additional Metrics */}
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Fees Due</CardTitle>
             <DollarSign className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${reportData.totalFeeFolders.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalFeeFolders)}</div>
             <p className="text-xs text-muted-foreground">From fee folders</p>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Remaining Fees</CardTitle>
             <Receipt className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">${reportData.remainingFees.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.remainingFees)}</div>
             <p className="text-xs text-muted-foreground">Outstanding amount</p>
           </CardContent>
         </Card>
@@ -252,7 +259,7 @@ const Reports = () => {
 
       {/* Charts */}
       <div className="grid gap-6 md:grid-cols-2">
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader>
             <CardTitle className="text-foreground">Monthly Financial Trends</CardTitle>
           </CardHeader>
@@ -277,7 +284,7 @@ const Reports = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader>
             <CardTitle className="text-foreground">Expense Categories</CardTitle>
           </CardHeader>
@@ -306,7 +313,7 @@ const Reports = () => {
       </div>
 
       {/* Payment Methods */}
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle className="text-foreground">Payment Methods Analysis</CardTitle>
         </CardHeader>
@@ -321,7 +328,7 @@ const Reports = () => {
                 <div className="mt-2">
                   <div className="text-2xl font-bold">{method.value}</div>
                   <div className="text-sm text-muted-foreground">transactions</div>
-                  <div className="text-lg font-semibold text-primary">${method.amount.toLocaleString()}</div>
+                  <div className="text-lg font-semibold text-primary">{formatAmount(method.amount)}</div>
                 </div>
               </div>
             ))}

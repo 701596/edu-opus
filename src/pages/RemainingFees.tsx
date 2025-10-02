@@ -12,7 +12,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, CreditCard } from 'lucide-react';
+import { Plus, Edit, Trash2, CreditCard, FolderOpen } from 'lucide-react';
+import { useCurrency } from '@/contexts/CurrencyContext';
 
 const feeFolderSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
@@ -37,6 +38,7 @@ const RemainingFees = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingFeeFolder, setEditingFeeFolder] = useState<FeeFolder | null>(null);
   const { toast } = useToast();
+  const { formatAmount } = useCurrency();
 
   const form = useForm<z.infer<typeof feeFolderSchema>>({
     resolver: zodResolver(feeFolderSchema),
@@ -54,6 +56,26 @@ const RemainingFees = () => {
   useEffect(() => {
     fetchFeeFolders();
     fetchStudents();
+    
+    // Real-time subscription
+    const channel = supabase
+      .channel('fee-folders-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'fee_folders',
+        },
+        () => {
+          fetchFeeFolders();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchFeeFolders = async () => {
@@ -211,10 +233,15 @@ const RemainingFees = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Remaining Fees</h1>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <FolderOpen className="w-8 h-8 text-primary" />
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
+              Remaining Fees
+            </h1>
+          </div>
           <p className="text-muted-foreground">Manage student fee folders and track outstanding payments</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
@@ -359,18 +386,18 @@ const RemainingFees = () => {
       </div>
 
       {/* Summary Card */}
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">Total Outstanding Fees</CardTitle>
           <CreditCard className="h-4 w-4 text-destructive" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold text-destructive">${totalRemaining.toLocaleString()}</div>
+          <div className="text-2xl font-bold text-destructive">{formatAmount(totalRemaining)}</div>
           <p className="text-xs text-muted-foreground">Across {feeFolders.filter(f => f.remaining_amount! > 0).length} folders</p>
         </CardContent>
       </Card>
 
-      <Card className="bg-gradient-to-br from-card to-accent/5 border-0 shadow-card">
+      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <CardTitle>Fee Folders</CardTitle>
         </CardHeader>
@@ -405,10 +432,10 @@ const RemainingFees = () => {
                       </TableCell>
                       <TableCell>{folder.folder_name}</TableCell>
                       <TableCell className="capitalize">{folder.category}</TableCell>
-                      <TableCell>${Number(folder.amount_due).toFixed(2)}</TableCell>
-                      <TableCell>${Number(folder.amount_paid || 0).toFixed(2)}</TableCell>
-                      <TableCell className={folder.remaining_amount! > 0 ? 'text-destructive font-medium' : 'text-green-600'}>
-                        ${folder.remaining_amount!.toFixed(2)}
+                      <TableCell>{formatAmount(Number(folder.amount_due))}</TableCell>
+                      <TableCell className="text-green-600">{formatAmount(Number(folder.amount_paid || 0))}</TableCell>
+                      <TableCell className={folder.remaining_amount! > 0 ? 'text-destructive font-semibold' : 'text-green-600 font-semibold'}>
+                        {formatAmount(folder.remaining_amount!)}
                       </TableCell>
                       <TableCell>
                         {folder.due_date ? new Date(folder.due_date).toLocaleDateString() : '-'}
