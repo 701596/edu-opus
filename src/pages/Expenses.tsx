@@ -167,10 +167,12 @@ const Expenses = () => {
     }
   };
 
-  const handleDialogClose = () => {
-    setIsDialogOpen(false);
-    setEditingExpense(null);
-    form.reset();
+  const handleDialogChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setEditingExpense(null);
+      form.reset();
+    }
   };
 
   if (loading) {
@@ -193,7 +195,7 @@ const Expenses = () => {
           </div>
           <p className="text-muted-foreground">Track operational costs and expenditures</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
@@ -292,7 +294,7 @@ const Expenses = () => {
                   )}
                 />
                 <div className="flex justify-end space-x-2 pt-4">
-                  <Button type="button" variant="outline" onClick={handleDialogClose}>
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
                   </Button>
                   <Button type="submit" className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">

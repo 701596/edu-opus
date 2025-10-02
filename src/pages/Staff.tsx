@@ -181,10 +181,12 @@ const Staff = () => {
     }
   };
 
-  const handleDialogClose = () => {
-    setIsDialogOpen(false);
-    setEditingStaff(null);
-    form.reset();
+  const handleDialogChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (!open) {
+      setEditingStaff(null);
+      form.reset();
+    }
   };
 
   if (loading) {
@@ -207,7 +209,7 @@ const Staff = () => {
           </div>
           <p className="text-muted-foreground">Manage staff members and employees</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
@@ -351,7 +353,7 @@ const Staff = () => {
                   />
                 </div>
                 <div className="flex justify-end space-x-2 pt-4">
-                  <Button type="button" variant="outline" onClick={handleDialogClose}>
+                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
                   </Button>
                   <Button type="submit" className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
