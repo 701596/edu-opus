@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -20,13 +21,18 @@ const studentSchema = z.object({
   phone: z.string().optional(),
   address: z.string().optional(),
   date_of_birth: z.string().optional(),
-  grade_level: z.string().optional(),
   guardian_name: z.string().optional(),
   guardian_phone: z.string().optional(),
-  fees_amount: z.number().min(0, 'Fees amount must be positive').optional(),
+  enrollment_date: z.string().min(1, 'Enrollment date is required'),
+  fee_amount: z.number().min(0, 'Fee amount must be positive'),
+  fee_type: z.enum(['monthly', 'annually']),
 });
 
-type Student = z.infer<typeof studentSchema> & { id: string };
+type Student = z.infer<typeof studentSchema> & { 
+  id: string;
+  created_at?: string;
+  updated_at?: string;
+};
 
 const Students = () => {
   const [students, setStudents] = useState<Student[]>([]);
@@ -45,35 +51,23 @@ const Students = () => {
       phone: '',
       address: '',
       date_of_birth: '',
-      grade_level: '',
       guardian_name: '',
       guardian_phone: '',
-      fees_amount: 0,
+      enrollment_date: new Date().toISOString().split('T')[0],
+      fee_amount: 0,
+      fee_type: 'monthly',
     },
   });
 
   useEffect(() => {
     fetchStudents();
     
-    // Real-time subscription
     const channel = supabase
       .channel('students-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'students',
-        },
-        () => {
-          fetchStudents();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchStudents)
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const fetchStudents = async () => {
@@ -84,14 +78,10 @@ const Students = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setStudents(data || []);
+      setStudents((data || []) as Student[]);
     } catch (error) {
       console.error('Error fetching students:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch students',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to fetch students', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -99,41 +89,26 @@ const Students = () => {
 
   const onSubmit = async (data: z.infer<typeof studentSchema>) => {
     try {
-      if (editingStudent) {
-        const { error } = await supabase
-          .from('students')
-          .update({
-            student_id: data.student_id,
-            name: data.name,
-            email: data.email || null,
-            phone: data.phone || null,
-            address: data.address || null,
-            date_of_birth: data.date_of_birth || null,
-            grade_level: data.grade_level || null,
-            guardian_name: data.guardian_name || null,
-            guardian_phone: data.guardian_phone || null,
-            fees_amount: data.fees_amount || 0,
-          })
-          .eq('id', editingStudent.id);
+      const payload = {
+        student_id: data.student_id,
+        name: data.name,
+        email: data.email || null,
+        phone: data.phone || null,
+        address: data.address || null,
+        date_of_birth: data.date_of_birth || null,
+        guardian_name: data.guardian_name || null,
+        guardian_phone: data.guardian_phone || null,
+        enrollment_date: data.enrollment_date,
+        fee_amount: data.fee_amount,
+        fee_type: data.fee_type,
+      };
 
+      if (editingStudent) {
+        const { error } = await supabase.from('students').update(payload).eq('id', editingStudent.id);
         if (error) throw error;
         toast({ title: 'Success', description: 'Student updated successfully' });
       } else {
-        const { error } = await supabase
-          .from('students')
-          .insert([{
-            student_id: data.student_id,
-            name: data.name,
-            email: data.email || null,
-            phone: data.phone || null,
-            address: data.address || null,
-            date_of_birth: data.date_of_birth || null,
-            grade_level: data.grade_level || null,
-            guardian_name: data.guardian_name || null,
-            guardian_phone: data.guardian_phone || null,
-            fees_amount: data.fees_amount || 0,
-          }]);
-
+        const { error } = await supabase.from('students').insert([payload]);
         if (error) throw error;
         toast({ title: 'Success', description: 'Student added successfully' });
       }
@@ -141,13 +116,8 @@ const Students = () => {
       setIsDialogOpen(false);
       setEditingStudent(null);
       form.reset();
-      fetchStudents();
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'An error occurred',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: error.message || 'An error occurred', variant: 'destructive' });
     }
   };
 
@@ -159,32 +129,20 @@ const Students = () => {
       phone: student.phone || '',
       address: student.address || '',
       date_of_birth: student.date_of_birth || '',
-      grade_level: student.grade_level || '',
       guardian_name: student.guardian_name || '',
       guardian_phone: student.guardian_phone || '',
-      fees_amount: Number(student.fees_amount) || 0,
     });
     setIsDialogOpen(true);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this student?')) return;
-
     try {
-      const { error } = await supabase
-        .from('students')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('students').delete().eq('id', id);
       if (error) throw error;
       toast({ title: 'Success', description: 'Student deleted successfully' });
-      fetchStudents();
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to delete student',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: error.message || 'Failed to delete student', variant: 'destructive' });
     }
   };
 
@@ -301,12 +259,12 @@ const Students = () => {
                   />
                   <FormField
                     control={form.control}
-                    name="grade_level"
+                    name="enrollment_date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Grade Level</FormLabel>
+                        <FormLabel>Enrollment Date</FormLabel>
                         <FormControl>
-                          <Input placeholder="Enter grade level" {...field} />
+                          <Input type="date" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -354,24 +312,47 @@ const Students = () => {
                     )}
                   />
                 </div>
-                <FormField
-                  control={form.control}
-                  name="fees_amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Fees Amount</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="number" 
-                          placeholder="Enter fees amount" 
-                          {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="fee_amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fee Amount</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            placeholder="Enter fee amount" 
+                            {...field}
+                            onChange={(e) => field.onChange(Number(e.target.value))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fee_type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fee Type</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select fee type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                            <SelectItem value="annually">Annually</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
@@ -398,8 +379,8 @@ const Students = () => {
                   <TableHead>Student ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Grade Level</TableHead>
-                  <TableHead>Fees Amount</TableHead>
+                  <TableHead>Fee Amount</TableHead>
+                  <TableHead>Fee Type</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -416,15 +397,13 @@ const Students = () => {
                       <TableCell className="font-medium">{student.student_id}</TableCell>
                       <TableCell>{student.name}</TableCell>
                       <TableCell>{student.email || '-'}</TableCell>
-                      <TableCell>{student.grade_level || '-'}</TableCell>
-                      <TableCell className="font-semibold text-primary">{formatAmount(Number(student.fees_amount || 0))}</TableCell>
+                      <TableCell className="font-semibold text-primary">
+                        {formatAmount(Number(student.fee_amount || 0))}
+                      </TableCell>
+                      <TableCell className="capitalize">{student.fee_type}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(student)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => handleEdit(student)}>
                             <Edit className="w-4 h-4" />
                           </Button>
                           <Button

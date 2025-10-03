@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -23,9 +24,14 @@ const staffSchema = z.object({
   department: z.string().optional(),
   hire_date: z.string().min(1, 'Hire date is required'),
   salary: z.number().min(0, 'Salary must be positive'),
+  salary_type: z.enum(['monthly', 'annually']),
 });
 
-type Staff = z.infer<typeof staffSchema> & { id: string };
+type Staff = z.infer<typeof staffSchema> & { 
+  id: string;
+  created_at?: string;
+  updated_at?: string;
+};
 
 const Staff = () => {
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -47,31 +53,19 @@ const Staff = () => {
       department: '',
       hire_date: new Date().toISOString().split('T')[0],
       salary: 0,
+      salary_type: 'monthly',
     },
   });
 
   useEffect(() => {
     fetchStaff();
     
-    // Real-time subscription
     const channel = supabase
       .channel('staff-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'staff',
-        },
-        () => {
-          fetchStaff();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchStaff)
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const fetchStaff = async () => {
@@ -82,14 +76,10 @@ const Staff = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setStaff(data || []);
+      setStaff((data || []) as Staff[]);
     } catch (error) {
       console.error('Error fetching staff:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch staff',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: 'Failed to fetch staff', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -97,39 +87,25 @@ const Staff = () => {
 
   const onSubmit = async (data: z.infer<typeof staffSchema>) => {
     try {
-      if (editingStaff) {
-        const { error } = await supabase
-          .from('staff')
-          .update({
-            staff_id: data.staff_id,
-            name: data.name,
-            email: data.email || null,
-            phone: data.phone || null,
-            address: data.address || null,
-            position: data.position,
-            department: data.department || null,
-            hire_date: data.hire_date,
-            salary: data.salary,
-          })
-          .eq('id', editingStaff.id);
+      const payload = {
+        staff_id: data.staff_id,
+        name: data.name,
+        email: data.email || null,
+        phone: data.phone || null,
+        address: data.address || null,
+        position: data.position,
+        department: data.department || null,
+        hire_date: data.hire_date,
+        salary: data.salary,
+        salary_type: data.salary_type,
+      };
 
+      if (editingStaff) {
+        const { error } = await supabase.from('staff').update(payload).eq('id', editingStaff.id);
         if (error) throw error;
         toast({ title: 'Success', description: 'Staff member updated successfully' });
       } else {
-        const { error } = await supabase
-          .from('staff')
-          .insert([{
-            staff_id: data.staff_id,
-            name: data.name,
-            email: data.email || null,
-            phone: data.phone || null,
-            address: data.address || null,
-            position: data.position,
-            department: data.department || null,
-            hire_date: data.hire_date,
-            salary: data.salary,
-          }]);
-
+        const { error } = await supabase.from('staff').insert([payload]);
         if (error) throw error;
         toast({ title: 'Success', description: 'Staff member added successfully' });
       }
@@ -137,13 +113,8 @@ const Staff = () => {
       setIsDialogOpen(false);
       setEditingStaff(null);
       form.reset();
-      fetchStaff();
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'An error occurred',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: error.message || 'An error occurred', variant: 'destructive' });
     }
   };
 
@@ -155,29 +126,18 @@ const Staff = () => {
       phone: staffMember.phone || '',
       address: staffMember.address || '',
       department: staffMember.department || '',
-      salary: Number(staffMember.salary),
     });
     setIsDialogOpen(true);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this staff member?')) return;
-
     try {
-      const { error } = await supabase
-        .from('staff')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('staff').delete().eq('id', id);
       if (error) throw error;
       toast({ title: 'Success', description: 'Staff member deleted successfully' });
-      fetchStaff();
     } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to delete staff member',
-        variant: 'destructive',
-      });
+      toast({ title: 'Error', description: error.message || 'Failed to delete staff member', variant: 'destructive' });
     }
   };
 
@@ -322,19 +282,6 @@ const Staff = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
-                    name="hire_date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Hire Date</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
                     name="salary"
                     render={({ field }) => (
                       <FormItem>
@@ -351,7 +298,41 @@ const Staff = () => {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="salary_type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Salary Type</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select salary type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="monthly">Monthly</SelectItem>
+                            <SelectItem value="annually">Annually</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
+                <FormField
+                  control={form.control}
+                  name="hire_date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Hire Date</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
@@ -380,13 +361,14 @@ const Staff = () => {
                   <TableHead>Position</TableHead>
                   <TableHead>Department</TableHead>
                   <TableHead>Salary</TableHead>
+                  <TableHead>Salary Type</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {staff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No staff members found
                     </TableCell>
                   </TableRow>
@@ -397,14 +379,13 @@ const Staff = () => {
                       <TableCell>{staffMember.name}</TableCell>
                       <TableCell>{staffMember.position}</TableCell>
                       <TableCell>{staffMember.department || '-'}</TableCell>
-                      <TableCell className="font-semibold text-primary">{formatAmount(Number(staffMember.salary))}</TableCell>
+                      <TableCell className="font-semibold text-primary">
+                        {formatAmount(Number(staffMember.salary))}
+                      </TableCell>
+                      <TableCell className="capitalize">{staffMember.salary_type}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleEdit(staffMember)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => handleEdit(staffMember)}>
                             <Edit className="w-4 h-4" />
                           </Button>
                           <Button

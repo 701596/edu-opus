@@ -227,6 +227,7 @@ export type Database = {
           phone: string
           position: string
           salary: number
+          salary_type: string | null
           staff_id: string
           updated_at: string
         }
@@ -241,6 +242,7 @@ export type Database = {
           phone: string
           position: string
           salary: number
+          salary_type?: string | null
           staff_id: string
           updated_at?: string
         }
@@ -255,6 +257,7 @@ export type Database = {
           phone?: string
           position?: string
           salary?: number
+          salary_type?: string | null
           staff_id?: string
           updated_at?: string
         }
@@ -267,6 +270,8 @@ export type Database = {
           date_of_birth: string
           email: string
           enrollment_date: string
+          fee_amount: number | null
+          fee_type: string | null
           guardian_name: string
           guardian_phone: string
           id: string
@@ -281,6 +286,8 @@ export type Database = {
           date_of_birth: string
           email: string
           enrollment_date?: string
+          fee_amount?: number | null
+          fee_type?: string | null
           guardian_name: string
           guardian_phone: string
           id?: string
@@ -295,6 +302,8 @@ export type Database = {
           date_of_birth?: string
           email?: string
           enrollment_date?: string
+          fee_amount?: number | null
+          fee_type?: string | null
           guardian_name?: string
           guardian_phone?: string
           id?: string
