@@ -15,17 +15,12 @@ import { Plus, Edit, Trash2, Users } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 
 const studentSchema = z.object({
-  student_id: z.string().min(1, 'Student ID is required'),
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  date_of_birth: z.string().optional(),
-  guardian_name: z.string().optional(),
-  guardian_phone: z.string().optional(),
-  enrollment_date: z.string().min(1, 'Enrollment date is required'),
+  class: z.string().min(1, 'Class is required'),
   fee_amount: z.number().min(0, 'Fee amount must be positive'),
   fee_type: z.enum(['monthly', 'annually']),
+  guardian_name: z.string().min(2, 'Guardian name is required'),
+  guardian_phone: z.string().min(10, 'Guardian phone is required'),
 });
 
 type Student = z.infer<typeof studentSchema> & { 
@@ -45,17 +40,12 @@ const Students = () => {
   const form = useForm<z.infer<typeof studentSchema>>({
     resolver: zodResolver(studentSchema),
     defaultValues: {
-      student_id: '',
       name: '',
-      email: '',
-      phone: '',
-      address: '',
-      date_of_birth: '',
-      guardian_name: '',
-      guardian_phone: '',
-      enrollment_date: new Date().toISOString().split('T')[0],
+      class: '',
       fee_amount: 0,
       fee_type: 'monthly',
+      guardian_name: '',
+      guardian_phone: '',
     },
   });
 
@@ -90,17 +80,14 @@ const Students = () => {
   const onSubmit = async (data: z.infer<typeof studentSchema>) => {
     try {
       const payload = {
-        student_id: data.student_id,
+        student_id: `STU-${Date.now()}`,
         name: data.name,
-        email: data.email || null,
-        phone: data.phone || null,
-        address: data.address || null,
-        date_of_birth: data.date_of_birth || null,
-        guardian_name: data.guardian_name || null,
-        guardian_phone: data.guardian_phone || null,
-        enrollment_date: data.enrollment_date,
+        class: data.class,
         fee_amount: data.fee_amount,
         fee_type: data.fee_type,
+        guardian_name: data.guardian_name,
+        guardian_phone: data.guardian_phone,
+        enrollment_date: new Date().toISOString().split('T')[0],
       };
 
       if (editingStudent) {
@@ -124,11 +111,10 @@ const Students = () => {
   const handleEdit = (student: Student) => {
     setEditingStudent(student);
     form.reset({
-      ...student,
-      email: student.email || '',
-      phone: student.phone || '',
-      address: student.address || '',
-      date_of_birth: student.date_of_birth || '',
+      name: student.name,
+      class: student.class || '',
+      fee_amount: Number(student.fee_amount || 0),
+      fee_type: student.fee_type as 'monthly' | 'annually',
       guardian_name: student.guardian_name || '',
       guardian_phone: student.guardian_phone || '',
     });
@@ -187,131 +173,32 @@ const Students = () => {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="student_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Student ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter student ID" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter full name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input type="email" placeholder="Enter email" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter phone number" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="date_of_birth"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date of Birth</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="enrollment_date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Enrollment Date</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
                 <FormField
                   control={form.control}
-                  name="address"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Address</FormLabel>
+                      <FormLabel>Student Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter address" {...field} />
+                        <Input placeholder="Enter student name" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="guardian_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Guardian Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter guardian name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="guardian_phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Guardian Phone</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter guardian phone" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                <FormField
+                  control={form.control}
+                  name="class"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Class</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter class (e.g., Grade 10)" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -337,7 +224,7 @@ const Students = () => {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Fee Type</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select fee type" />
@@ -353,6 +240,32 @@ const Students = () => {
                     )}
                   />
                 </div>
+                <FormField
+                  control={form.control}
+                  name="guardian_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Guardian Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter guardian name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="guardian_phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Guardian Phone Number</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter guardian phone number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
@@ -376,9 +289,9 @@ const Students = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Student ID</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
+                  <TableHead>Class</TableHead>
+                  <TableHead>Guardian</TableHead>
                   <TableHead>Fee Amount</TableHead>
                   <TableHead>Fee Type</TableHead>
                   <TableHead>Actions</TableHead>
@@ -394,9 +307,9 @@ const Students = () => {
                 ) : (
                   students.map((student) => (
                     <TableRow key={student.id}>
-                      <TableCell className="font-medium">{student.student_id}</TableCell>
-                      <TableCell>{student.name}</TableCell>
-                      <TableCell>{student.email || '-'}</TableCell>
+                      <TableCell className="font-medium">{student.name}</TableCell>
+                      <TableCell>{student.class || '-'}</TableCell>
+                      <TableCell>{student.guardian_name || '-'}</TableCell>
                       <TableCell className="font-semibold text-primary">
                         {formatAmount(Number(student.fee_amount || 0))}
                       </TableCell>

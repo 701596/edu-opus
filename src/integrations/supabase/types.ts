@@ -217,10 +217,10 @@ export type Database = {
       }
       staff: {
         Row: {
-          address: string
+          address: string | null
           created_at: string
-          department: string
-          email: string
+          department: string | null
+          email: string | null
           hire_date: string
           id: string
           name: string
@@ -232,10 +232,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          address: string
+          address?: string | null
           created_at?: string
-          department: string
-          email: string
+          department?: string | null
+          email?: string | null
           hire_date: string
           id?: string
           name: string
@@ -247,10 +247,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          address?: string
+          address?: string | null
           created_at?: string
-          department?: string
-          email?: string
+          department?: string | null
+          email?: string | null
           hire_date?: string
           id?: string
           name?: string
@@ -265,50 +265,53 @@ export type Database = {
       }
       students: {
         Row: {
-          address: string
+          address: string | null
+          class: string | null
           created_at: string
-          date_of_birth: string
-          email: string
+          date_of_birth: string | null
+          email: string | null
           enrollment_date: string
           fee_amount: number | null
           fee_type: string | null
-          guardian_name: string
-          guardian_phone: string
+          guardian_name: string | null
+          guardian_phone: string | null
           id: string
           name: string
-          phone: string
+          phone: string | null
           student_id: string
           updated_at: string
         }
         Insert: {
-          address: string
+          address?: string | null
+          class?: string | null
           created_at?: string
-          date_of_birth: string
-          email: string
+          date_of_birth?: string | null
+          email?: string | null
           enrollment_date?: string
           fee_amount?: number | null
           fee_type?: string | null
-          guardian_name: string
-          guardian_phone: string
+          guardian_name?: string | null
+          guardian_phone?: string | null
           id?: string
           name: string
-          phone: string
+          phone?: string | null
           student_id: string
           updated_at?: string
         }
         Update: {
-          address?: string
+          address?: string | null
+          class?: string | null
           created_at?: string
-          date_of_birth?: string
-          email?: string
+          date_of_birth?: string | null
+          email?: string | null
           enrollment_date?: string
           fee_amount?: number | null
           fee_type?: string | null
-          guardian_name?: string
-          guardian_phone?: string
+          guardian_name?: string | null
+          guardian_phone?: string | null
           id?: string
           name?: string
-          phone?: string
+          phone?: string | null
           student_id?: string
           updated_at?: string
         }

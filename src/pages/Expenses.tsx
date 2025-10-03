@@ -14,12 +14,10 @@ import { Plus, Edit, Trash2, Receipt } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 
 const expenseSchema = z.object({
-  description: z.string().min(1, 'Description is required'),
-  category: z.string().min(1, 'Category is required'),
+  description: z.string().min(1, 'Expense name is required'),
   amount: z.number().min(0, 'Amount must be positive'),
+  category: z.string().min(1, 'Category is required'),
   expense_date: z.string().min(1, 'Expense date is required'),
-  vendor: z.string().optional(),
-  receipt_number: z.string().optional(),
 });
 
 type Expense = z.infer<typeof expenseSchema> & { id: string };
@@ -36,11 +34,9 @@ const Expenses = () => {
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       description: '',
-      category: '',
       amount: 0,
+      category: '',
       expense_date: new Date().toISOString().split('T')[0],
-      vendor: '',
-      receipt_number: '',
     },
   });
 
@@ -91,17 +87,19 @@ const Expenses = () => {
 
   const onSubmit = async (data: z.infer<typeof expenseSchema>) => {
     try {
+      const payload = {
+        description: data.description,
+        amount: data.amount,
+        category: data.category,
+        expense_date: data.expense_date,
+        vendor: data.description,
+        receipt_number: `EXP-${Date.now()}`,
+      };
+
       if (editingExpense) {
         const { error } = await supabase
           .from('expenses')
-          .update({
-            description: data.description,
-            category: data.category,
-            amount: data.amount,
-            expense_date: data.expense_date,
-            vendor: data.vendor || null,
-            receipt_number: data.receipt_number || null,
-          })
+          .update(payload)
           .eq('id', editingExpense.id);
 
         if (error) throw error;
@@ -109,14 +107,7 @@ const Expenses = () => {
       } else {
         const { error } = await supabase
           .from('expenses')
-          .insert([{
-            description: data.description,
-            category: data.category,
-            amount: data.amount,
-            expense_date: data.expense_date,
-            vendor: data.vendor || null,
-            receipt_number: data.receipt_number || null,
-          }]);
+          .insert([payload]);
 
         if (error) throw error;
         toast({ title: 'Success', description: 'Expense added successfully' });
@@ -138,10 +129,10 @@ const Expenses = () => {
   const handleEdit = (expense: Expense) => {
     setEditingExpense(expense);
     form.reset({
-      ...expense,
-      vendor: expense.vendor || '',
-      receipt_number: expense.receipt_number || '',
+      description: expense.description,
       amount: Number(expense.amount),
+      category: expense.category,
+      expense_date: expense.expense_date,
     });
     setIsDialogOpen(true);
   };
@@ -213,28 +204,15 @@ const Expenses = () => {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
+                      <FormLabel>Expense Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter expense description" {...field} />
+                        <Input placeholder="Enter expense name" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
                 <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="category"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Category</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter category" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                   <FormField
                     control={form.control}
                     name="amount"
@@ -253,41 +231,28 @@ const Expenses = () => {
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Category</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Utilities, Supplies" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
                 <FormField
                   control={form.control}
                   name="expense_date"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Expense Date</FormLabel>
+                      <FormLabel>Date</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="vendor"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Vendor</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter vendor name" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="receipt_number"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Receipt Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter receipt number" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -316,18 +281,17 @@ const Expenses = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Description</TableHead>
+                  <TableHead>Expense Name</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Vendor</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {expenses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       No expenses found
                     </TableCell>
                   </TableRow>
@@ -338,7 +302,6 @@ const Expenses = () => {
                       <TableCell>{expense.category}</TableCell>
                       <TableCell className="font-semibold text-primary">{formatAmount(Number(expense.amount))}</TableCell>
                       <TableCell>{new Date(expense.expense_date).toLocaleDateString()}</TableCell>
-                      <TableCell>{expense.vendor || '-'}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button

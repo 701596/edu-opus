@@ -18,9 +18,6 @@ const paymentSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
   amount: z.number().min(0, 'Amount must be positive'),
   payment_date: z.string().min(1, 'Payment date is required'),
-  payment_method: z.string().min(1, 'Payment method is required'),
-  description: z.string().optional(),
-  receipt_number: z.string().optional(),
 });
 
 type Payment = z.infer<typeof paymentSchema> & { id: string; students?: { name: string } };
@@ -40,9 +37,6 @@ const Payments = () => {
       student_id: '',
       amount: 0,
       payment_date: new Date().toISOString().split('T')[0],
-      payment_method: '',
-      description: '',
-      receipt_number: '',
     },
   });
 
@@ -113,17 +107,18 @@ const Payments = () => {
 
   const onSubmit = async (data: z.infer<typeof paymentSchema>) => {
     try {
+      const payload = {
+        student_id: data.student_id,
+        amount: data.amount,
+        payment_date: data.payment_date,
+        payment_method: 'cash',
+        receipt_number: `PAY-${Date.now()}`,
+      };
+
       if (editingPayment) {
         const { error } = await supabase
           .from('payments')
-          .update({
-            student_id: data.student_id,
-            amount: data.amount,
-            payment_date: data.payment_date,
-            payment_method: data.payment_method,
-            description: data.description || null,
-            receipt_number: data.receipt_number || null,
-          })
+          .update(payload)
           .eq('id', editingPayment.id);
 
         if (error) throw error;
@@ -131,14 +126,7 @@ const Payments = () => {
       } else {
         const { error } = await supabase
           .from('payments')
-          .insert([{
-            student_id: data.student_id,
-            amount: data.amount,
-            payment_date: data.payment_date,
-            payment_method: data.payment_method,
-            description: data.description || null,
-            receipt_number: data.receipt_number || null,
-          }]);
+          .insert([payload]);
 
         if (error) throw error;
         toast({ title: 'Success', description: 'Payment added successfully' });
@@ -160,10 +148,9 @@ const Payments = () => {
   const handleEdit = (payment: Payment) => {
     setEditingPayment(payment);
     form.reset({
-      ...payment,
-      description: payment.description || '',
-      receipt_number: payment.receipt_number || '',
+      student_id: payment.student_id,
       amount: Number(payment.amount),
+      payment_date: payment.payment_date,
     });
     setIsDialogOpen(true);
   };
@@ -235,8 +222,8 @@ const Payments = () => {
                   name="student_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Student</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormLabel>Select Student</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select a student" />
@@ -260,11 +247,11 @@ const Payments = () => {
                     name="amount"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Amount</FormLabel>
+                        <FormLabel>Amount Paid</FormLabel>
                         <FormControl>
                           <Input 
                             type="number" 
-                            placeholder="Enter amount" 
+                            placeholder="Enter amount paid" 
                             {...field}
                             onChange={(e) => field.onChange(Number(e.target.value))}
                           />
@@ -278,7 +265,7 @@ const Payments = () => {
                     name="payment_date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Payment Date</FormLabel>
+                        <FormLabel>Date</FormLabel>
                         <FormControl>
                           <Input type="date" {...field} />
                         </FormControl>
@@ -287,56 +274,6 @@ const Payments = () => {
                     )}
                   />
                 </div>
-                <FormField
-                  control={form.control}
-                  name="payment_method"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Payment Method</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select payment method" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="cash">Cash</SelectItem>
-                          <SelectItem value="card">Card</SelectItem>
-                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                          <SelectItem value="check">Check</SelectItem>
-                          <SelectItem value="online">Online Payment</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="receipt_number"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Receipt Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter receipt number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter description" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
@@ -361,17 +298,15 @@ const Payments = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead>Student</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Payment Date</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Receipt #</TableHead>
+                  <TableHead>Amount Paid</TableHead>
+                  <TableHead>Date</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {payments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center text-muted-foreground">
                       No payments found
                     </TableCell>
                   </TableRow>
@@ -383,8 +318,6 @@ const Payments = () => {
                       </TableCell>
                       <TableCell className="font-semibold text-primary">{formatAmount(Number(payment.amount))}</TableCell>
                       <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
-                      <TableCell className="capitalize">{payment.payment_method.replace('_', ' ')}</TableCell>
-                      <TableCell>{payment.receipt_number || '-'}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button

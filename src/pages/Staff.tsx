@@ -15,16 +15,11 @@ import { Plus, Edit, Trash2, Briefcase } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 
 const staffSchema = z.object({
-  staff_id: z.string().min(1, 'Staff ID is required'),
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  position: z.string().min(1, 'Position is required'),
-  department: z.string().optional(),
-  hire_date: z.string().min(1, 'Hire date is required'),
+  position: z.string().min(1, 'Role is required'),
   salary: z.number().min(0, 'Salary must be positive'),
   salary_type: z.enum(['monthly', 'annually']),
+  phone: z.string().min(10, 'Contact number is required'),
 });
 
 type Staff = z.infer<typeof staffSchema> & { 
@@ -44,16 +39,11 @@ const Staff = () => {
   const form = useForm<z.infer<typeof staffSchema>>({
     resolver: zodResolver(staffSchema),
     defaultValues: {
-      staff_id: '',
       name: '',
-      email: '',
-      phone: '',
-      address: '',
       position: '',
-      department: '',
-      hire_date: new Date().toISOString().split('T')[0],
       salary: 0,
       salary_type: 'monthly',
+      phone: '',
     },
   });
 
@@ -88,16 +78,13 @@ const Staff = () => {
   const onSubmit = async (data: z.infer<typeof staffSchema>) => {
     try {
       const payload = {
-        staff_id: data.staff_id,
+        staff_id: `STF-${Date.now()}`,
         name: data.name,
-        email: data.email || null,
-        phone: data.phone || null,
-        address: data.address || null,
         position: data.position,
-        department: data.department || null,
-        hire_date: data.hire_date,
         salary: data.salary,
         salary_type: data.salary_type,
+        phone: data.phone,
+        hire_date: new Date().toISOString().split('T')[0],
       };
 
       if (editingStaff) {
@@ -121,11 +108,11 @@ const Staff = () => {
   const handleEdit = (staffMember: Staff) => {
     setEditingStaff(staffMember);
     form.reset({
-      ...staffMember,
-      email: staffMember.email || '',
+      name: staffMember.name,
+      position: staffMember.position,
+      salary: Number(staffMember.salary),
+      salary_type: staffMember.salary_type as 'monthly' | 'annually',
       phone: staffMember.phone || '',
-      address: staffMember.address || '',
-      department: staffMember.department || '',
     });
     setIsDialogOpen(true);
   };
@@ -182,98 +169,27 @@ const Staff = () => {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="staff_id"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Staff ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter staff ID" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter full name" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input type="email" placeholder="Enter email" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter phone number" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="position"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Position</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter position" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="department"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Department</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Enter department" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
                 <FormField
                   control={form.control}
-                  name="address"
+                  name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Address</FormLabel>
+                      <FormLabel>Staff Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter address" {...field} />
+                        <Input placeholder="Enter staff name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="position"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Role</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter role (e.g., Teacher, Admin)" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -285,11 +201,11 @@ const Staff = () => {
                     name="salary"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Salary</FormLabel>
+                        <FormLabel>Salary Amount</FormLabel>
                         <FormControl>
                           <Input 
                             type="number" 
-                            placeholder="Enter salary" 
+                            placeholder="Enter salary amount" 
                             {...field}
                             onChange={(e) => field.onChange(Number(e.target.value))}
                           />
@@ -304,7 +220,7 @@ const Staff = () => {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Salary Type</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select salary type" />
@@ -322,12 +238,12 @@ const Staff = () => {
                 </div>
                 <FormField
                   control={form.control}
-                  name="hire_date"
+                  name="phone"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Hire Date</FormLabel>
+                      <FormLabel>Contact Number</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
+                        <Input placeholder="Enter contact number" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -356,10 +272,9 @@ const Staff = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Staff ID</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>Position</TableHead>
-                  <TableHead>Department</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Contact</TableHead>
                   <TableHead>Salary</TableHead>
                   <TableHead>Salary Type</TableHead>
                   <TableHead>Actions</TableHead>
@@ -368,17 +283,16 @@ const Staff = () => {
               <TableBody>
                 {staff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       No staff members found
                     </TableCell>
                   </TableRow>
                 ) : (
                   staff.map((staffMember) => (
                     <TableRow key={staffMember.id}>
-                      <TableCell className="font-medium">{staffMember.staff_id}</TableCell>
-                      <TableCell>{staffMember.name}</TableCell>
+                      <TableCell className="font-medium">{staffMember.name}</TableCell>
                       <TableCell>{staffMember.position}</TableCell>
-                      <TableCell>{staffMember.department || '-'}</TableCell>
+                      <TableCell>{staffMember.phone || '-'}</TableCell>
                       <TableCell className="font-semibold text-primary">
                         {formatAmount(Number(staffMember.salary))}
                       </TableCell>
