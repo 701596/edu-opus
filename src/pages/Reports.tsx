@@ -272,8 +272,8 @@ const Reports = () => {
         </Card>
       </div>
 
-      {/* Additional Metrics */}
-      <div className="grid gap-6 md:grid-cols-2">
+      {/* Financial Health Insights */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Fees Due</CardTitle>
@@ -293,6 +293,21 @@ const Reports = () => {
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.remainingFees)}</div>
             <p className="text-xs text-muted-foreground">Outstanding amount</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Collection Rate</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">
+              {reportData.totalFeeFolders > 0 
+                ? (((reportData.totalFeeFolders - reportData.remainingFees) / reportData.totalFeeFolders) * 100).toFixed(1)
+                : 0}%
+            </div>
+            <p className="text-xs text-muted-foreground">Fees collected</p>
           </CardContent>
         </Card>
       </div>

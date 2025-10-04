@@ -20,6 +20,10 @@ const staffSchema = z.object({
   salary: z.number().min(0, 'Salary must be positive'),
   salary_type: z.enum(['monthly', 'annually']),
   phone: z.string().min(10, 'Contact number is required'),
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
+  address: z.string().optional().or(z.literal('')),
+  department: z.string().optional().or(z.literal('')),
+  hire_date: z.string().optional().or(z.literal('')),
 });
 
 type Staff = z.infer<typeof staffSchema> & { 
@@ -44,6 +48,10 @@ const Staff = () => {
       salary: 0,
       salary_type: 'monthly',
       phone: '',
+      email: '',
+      address: '',
+      department: '',
+      hire_date: '',
     },
   });
 
@@ -84,7 +92,10 @@ const Staff = () => {
         salary: data.salary,
         salary_type: data.salary_type,
         phone: data.phone,
-        hire_date: new Date().toISOString().split('T')[0],
+        email: data.email || null,
+        address: data.address || null,
+        department: data.department || null,
+        hire_date: data.hire_date || new Date().toISOString().split('T')[0],
       };
 
       if (editingStaff) {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -21,6 +22,10 @@ const studentSchema = z.object({
   fee_type: z.enum(['monthly', 'annually']),
   guardian_name: z.string().min(2, 'Guardian name is required'),
   guardian_phone: z.string().min(10, 'Guardian phone is required'),
+  email: z.string().email('Invalid email address').optional().or(z.literal('')),
+  phone: z.string().optional().or(z.literal('')),
+  address: z.string().optional().or(z.literal('')),
+  date_of_birth: z.string().optional().or(z.literal('')),
 });
 
 type Student = z.infer<typeof studentSchema> & { 
@@ -46,6 +51,10 @@ const Students = () => {
       fee_type: 'monthly',
       guardian_name: '',
       guardian_phone: '',
+      email: '',
+      phone: '',
+      address: '',
+      date_of_birth: '',
     },
   });
 
@@ -87,6 +96,10 @@ const Students = () => {
         fee_type: data.fee_type,
         guardian_name: data.guardian_name,
         guardian_phone: data.guardian_phone,
+        email: data.email || null,
+        phone: data.phone || null,
+        address: data.address || null,
+        date_of_birth: data.date_of_birth || null,
         enrollment_date: new Date().toISOString().split('T')[0],
       };
 
@@ -103,20 +116,11 @@ const Students = () => {
 
         if (error) throw error;
 
-        // Auto-create fee folder for new student
-        if (newStudent && data.fee_amount > 0) {
-          await supabase.from('fee_folders').insert([{
-            student_id: newStudent.id,
-            folder_name: `${data.fee_type === 'monthly' ? 'Monthly' : 'Annual'} Tuition Fee`,
-            category: 'tuition',
-            amount_due: data.fee_amount,
-            amount_paid: 0,
-            status: 'pending',
-            due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
-          }]);
-        }
-
-        toast({ title: 'Success', description: 'Student added successfully' });
+        // Auto-create fee folder for new student (handled by database trigger)
+        toast({ 
+          title: 'Success', 
+          description: 'Student added successfully. Fee folder created automatically.' 
+        });
       }
 
       setIsDialogOpen(false);
@@ -280,6 +284,58 @@ const Students = () => {
                       <FormLabel>Guardian Phone Number</FormLabel>
                       <FormControl>
                         <Input placeholder="Enter guardian phone number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email (Optional)</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="Enter student email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone (Optional)</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Enter student phone number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="address"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address (Optional)</FormLabel>
+                      <FormControl>
+                        <Textarea placeholder="Enter student address" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="date_of_birth"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of Birth (Optional)</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

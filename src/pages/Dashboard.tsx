@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
-import { Users, UserCheck, CreditCard, TrendingUp, DollarSign, Receipt, LayoutDashboard } from 'lucide-react';
+import { Users, UserCheck, CreditCard, TrendingUp, DollarSign, Receipt, LayoutDashboard, AlertCircle, TrendingDown, Wallet } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import SystemStatus from '@/components/SystemStatus';
 
 interface DashboardStats {
   totalStudents: number;
   totalStaff: number;
-  totalPayments: number;
+  totalIncome: number;
   totalExpenses: number;
-  netIncome: number;
-  monthlyData: Array<{ month: string; income: number; expenses: number }>;
-  paymentMethods: Array<{ name: string; value: number }>;
+  totalSalaries: number;
+  remainingFees: number;
+  netProfit: number;
+  profitMargin: number;
+  monthlyData: Array<{ month: string; income: number; expenses: number; salaries: number }>;
+  paymentMethods: Array<{ name: string; value: number; amount: number }>;
+  recentPayments: Array<{ id: string; student_name: string; amount: number; date: string; method: string }>;
+  pendingFees: Array<{ student_name: string; amount: number; due_date: string }>;
 }
 
 const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', 'hsl(var(--muted))'];
@@ -21,11 +27,16 @@ const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalStudents: 0,
     totalStaff: 0,
-    totalPayments: 0,
+    totalIncome: 0,
     totalExpenses: 0,
-    netIncome: 0,
+    totalSalaries: 0,
+    remainingFees: 0,
+    netProfit: 0,
+    profitMargin: 0,
     monthlyData: [],
     paymentMethods: [],
+    recentPayments: [],
+    pendingFees: [],
   });
   const [loading, setLoading] = useState(true);
   const { formatAmount } = useCurrency();
@@ -76,44 +87,87 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch students count
-      const { count: studentsCount } = await supabase
-        .from('students')
-        .select('*', { count: 'exact', head: true });
+      // Fetch all data in parallel for better performance
+      const [
+        studentsResponse,
+        staffResponse,
+        paymentsResponse,
+        expensesResponse,
+        salariesResponse,
+        feeFoldersResponse,
+        recentPaymentsResponse,
+        pendingFeesResponse
+      ] = await Promise.all([
+        supabase.from('students').select('*', { count: 'exact', head: true }),
+        supabase.from('staff').select('*', { count: 'exact', head: true }),
+        supabase.from('payments').select('amount, payment_method, payment_date'),
+        supabase.from('expenses').select('amount, expense_date'),
+        supabase.from('salaries').select('net_amount, payment_date'),
+        supabase.from('fee_folders').select('amount_due, amount_paid, status'),
+        supabase.from('payments').select(`
+          id, amount, payment_date, payment_method,
+          students!inner(name)
+        `).order('payment_date', { ascending: false }).limit(5),
+        supabase.from('fee_folders').select(`
+          amount_due, amount_paid, due_date,
+          students!inner(name)
+        `).neq('status', 'paid').order('due_date', { ascending: true }).limit(5)
+      ]);
 
-      // Fetch staff count
-      const { count: staffCount } = await supabase
-        .from('staff')
-        .select('*', { count: 'exact', head: true });
+      const studentsCount = studentsResponse.count || 0;
+      const staffCount = staffResponse.count || 0;
+      const paymentsData = paymentsResponse.data || [];
+      const expensesData = expensesResponse.data || [];
+      const salariesData = salariesResponse.data || [];
+      const feeFoldersData = feeFoldersResponse.data || [];
 
-      // Fetch total payments
-      const { data: paymentsData } = await supabase
-        .from('payments')
-        .select('amount, payment_method, payment_date');
+      // Calculate financial metrics
+      const totalIncome = paymentsData.reduce((sum, payment) => sum + Number(payment.amount), 0);
+      const totalExpenses = expensesData.reduce((sum, expense) => sum + Number(expense.amount), 0);
+      const totalSalaries = salariesData.reduce((sum, salary) => sum + Number(salary.net_amount), 0);
+      const remainingFees = feeFoldersData.reduce((sum, folder) => {
+        const remaining = Number(folder.amount_due) - (Number(folder.amount_paid) || 0);
+        return sum + Math.max(0, remaining);
+      }, 0);
 
-      // Fetch total expenses
-      const { data: expensesData } = await supabase
-        .from('expenses')
-        .select('amount, expense_date');
-
-      const totalPayments = paymentsData?.reduce((sum, payment) => sum + Number(payment.amount), 0) || 0;
-      const totalExpenses = expensesData?.reduce((sum, expense) => sum + Number(expense.amount), 0) || 0;
-      const netIncome = totalPayments - totalExpenses;
+      const netProfit = totalIncome - totalExpenses;
+      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
 
       // Calculate monthly data for the last 6 months
-      const monthlyData = calculateMonthlyData(paymentsData || [], expensesData || []);
+      const monthlyData = calculateMonthlyData(paymentsData, expensesData, salariesData);
 
       // Calculate payment methods distribution
-      const paymentMethods = calculatePaymentMethodsData(paymentsData || []);
+      const paymentMethods = calculatePaymentMethodsData(paymentsData);
+
+      // Format recent payments
+      const recentPayments = (recentPaymentsResponse.data || []).map(payment => ({
+        id: payment.id,
+        student_name: payment.students?.name || 'Unknown',
+        amount: Number(payment.amount),
+        date: payment.payment_date,
+        method: payment.payment_method
+      }));
+
+      // Format pending fees
+      const pendingFees = (pendingFeesResponse.data || []).map(folder => ({
+        student_name: folder.students?.name || 'Unknown',
+        amount: Number(folder.amount_due) - (Number(folder.amount_paid) || 0),
+        due_date: folder.due_date
+      }));
 
       setStats({
-        totalStudents: studentsCount || 0,
-        totalStaff: staffCount || 0,
-        totalPayments,
+        totalStudents: studentsCount,
+        totalStaff: staffCount,
+        totalIncome,
         totalExpenses,
-        netIncome,
+        totalSalaries,
+        remainingFees,
+        netProfit,
+        profitMargin,
         monthlyData,
         paymentMethods,
+        recentPayments,
+        pendingFees,
       });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
@@ -122,7 +176,7 @@ const Dashboard = () => {
     }
   };
 
-  const calculateMonthlyData = (payments: any[], expenses: any[]) => {
+  const calculateMonthlyData = (payments: any[], expenses: any[], salaries: any[]) => {
     const months = [];
     const today = new Date();
     
@@ -138,11 +192,16 @@ const Dashboard = () => {
       const monthlyExpenses = expenses
         .filter(e => e.expense_date.startsWith(yearMonth))
         .reduce((sum, e) => sum + Number(e.amount), 0);
+
+      const monthlySalaries = salaries
+        .filter(s => s.payment_date.startsWith(yearMonth))
+        .reduce((sum, s) => sum + Number(s.net_amount), 0);
       
       months.push({
         month: monthName,
         income: monthlyIncome,
         expenses: monthlyExpenses,
+        salaries: monthlySalaries,
       });
     }
     
@@ -150,14 +209,22 @@ const Dashboard = () => {
   };
 
   const calculatePaymentMethodsData = (payments: any[]) => {
-    const methodCounts: Record<string, number> = {};
+    const methodData: Record<string, { count: number; amount: number }> = {};
     
     payments.forEach(payment => {
       const method = payment.payment_method || 'Unknown';
-      methodCounts[method] = (methodCounts[method] || 0) + 1;
+      if (!methodData[method]) {
+        methodData[method] = { count: 0, amount: 0 };
+      }
+      methodData[method].count += 1;
+      methodData[method].amount += Number(payment.amount);
     });
     
-    return Object.entries(methodCounts).map(([name, value]) => ({ name, value }));
+    return Object.entries(methodData).map(([name, data]) => ({ 
+      name, 
+      value: data.count, 
+      amount: data.amount 
+    }));
   };
 
   if (loading) {
@@ -181,8 +248,8 @@ const Dashboard = () => {
         <p className="text-muted-foreground">Overview of your institution's performance</p>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {/* Key Metrics */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Students</CardTitle>
@@ -211,7 +278,7 @@ const Dashboard = () => {
             <CreditCard className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalPayments)}</div>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalIncome)}</div>
             <p className="text-xs text-muted-foreground">From student payments</p>
           </CardContent>
         </Card>
@@ -226,39 +293,68 @@ const Dashboard = () => {
             <p className="text-xs text-muted-foreground">Operational costs</p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Financial Overview */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total Salaries</CardTitle>
+            <DollarSign className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalSalaries)}</div>
+            <p className="text-xs text-muted-foreground">Staff payments</p>
+          </CardContent>
+        </Card>
 
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Net Income</CardTitle>
-            <TrendingUp className={`h-4 w-4 ${stats.netIncome >= 0 ? 'text-green-500' : 'text-destructive'}`} />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Remaining Fees</CardTitle>
+            <AlertCircle className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${stats.netIncome >= 0 ? 'text-green-500' : 'text-destructive'}`}>
-              {formatAmount(stats.netIncome)}
+            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.remainingFees)}</div>
+            <p className="text-xs text-muted-foreground">Outstanding amount</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Net Profit</CardTitle>
+            {stats.netProfit >= 0 ? (
+              <TrendingUp className="h-4 w-4 text-green-500" />
+            ) : (
+              <TrendingDown className="h-4 w-4 text-destructive" />
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${stats.netProfit >= 0 ? 'text-green-500' : 'text-destructive'}`}>
+              {formatAmount(stats.netProfit)}
             </div>
-            <p className="text-xs text-muted-foreground">Profit/Loss</p>
+            <p className="text-xs text-muted-foreground">{stats.profitMargin.toFixed(1)}% margin</p>
           </CardContent>
         </Card>
 
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Profit Margin</CardTitle>
-            <DollarSign className="h-4 w-4 text-primary" />
+            <Wallet className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">
-              {stats.totalPayments > 0 ? ((stats.netIncome / stats.totalPayments) * 100).toFixed(1) : 0}%
+              {stats.profitMargin.toFixed(1)}%
             </div>
             <p className="text-xs text-muted-foreground">Of total income</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Charts */}
+      {/* Charts and Recent Activity */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader>
-            <CardTitle className="text-foreground">Monthly Income vs Expenses</CardTitle>
+            <CardTitle className="text-foreground">Monthly Financial Trends</CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
@@ -275,6 +371,7 @@ const Dashboard = () => {
                 />
                 <Bar dataKey="income" fill="hsl(var(--primary))" name="Income" />
                 <Bar dataKey="expenses" fill="hsl(var(--destructive))" name="Expenses" />
+                <Bar dataKey="salaries" fill="hsl(var(--secondary))" name="Salaries" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -306,6 +403,82 @@ const Dashboard = () => {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader>
+            <CardTitle className="text-foreground">Recent Payments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.recentPayments.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No recent payments</p>
+              ) : (
+                stats.recentPayments.map((payment) => (
+                  <div key={payment.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <div>
+                        <p className="font-medium">{payment.student_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(payment.date).toLocaleDateString()} • {payment.method}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-green-600">{formatAmount(payment.amount)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader>
+            <CardTitle className="text-foreground">Pending Fees</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.pendingFees.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No pending fees</p>
+              ) : (
+                stats.pendingFees.map((fee, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                      <div>
+                        <p className="font-medium">{fee.student_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Due: {new Date(fee.due_date).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-orange-600">{formatAmount(fee.amount)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* System Status */}
+      <div className="grid gap-6 md:grid-cols-1">
+        <SystemStatus
+          totalStudents={stats.totalStudents}
+          totalStaff={stats.totalStaff}
+          totalIncome={stats.totalIncome}
+          totalExpenses={stats.totalExpenses}
+          remainingFees={stats.remainingFees}
+          netProfit={stats.netProfit}
+          profitMargin={stats.profitMargin}
+        />
       </div>
     </div>
   );
