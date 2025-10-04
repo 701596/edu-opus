@@ -38,6 +38,46 @@ const Reports = () => {
 
   useEffect(() => {
     fetchReportData();
+
+    // Real-time subscriptions for all tables
+    const paymentsChannel = supabase
+      .channel('reports-payments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchReportData)
+      .subscribe();
+    
+    const expensesChannel = supabase
+      .channel('reports-expenses')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, fetchReportData)
+      .subscribe();
+    
+    const salariesChannel = supabase
+      .channel('reports-salaries')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'salaries' }, fetchReportData)
+      .subscribe();
+
+    const feeFoldersChannel = supabase
+      .channel('reports-fee-folders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_folders' }, fetchReportData)
+      .subscribe();
+
+    const studentsChannel = supabase
+      .channel('reports-students')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchReportData)
+      .subscribe();
+
+    const staffChannel = supabase
+      .channel('reports-staff')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchReportData)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(paymentsChannel);
+      supabase.removeChannel(expensesChannel);
+      supabase.removeChannel(salariesChannel);
+      supabase.removeChannel(feeFoldersChannel);
+      supabase.removeChannel(studentsChannel);
+      supabase.removeChannel(staffChannel);
+    };
   }, []);
 
   const fetchReportData = async () => {

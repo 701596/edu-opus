@@ -95,8 +95,27 @@ const Students = () => {
         if (error) throw error;
         toast({ title: 'Success', description: 'Student updated successfully' });
       } else {
-        const { error } = await supabase.from('students').insert([payload]);
+        const { data: newStudent, error } = await supabase
+          .from('students')
+          .insert([payload])
+          .select()
+          .single();
+
         if (error) throw error;
+
+        // Auto-create fee folder for new student
+        if (newStudent && data.fee_amount > 0) {
+          await supabase.from('fee_folders').insert([{
+            student_id: newStudent.id,
+            folder_name: `${data.fee_type === 'monthly' ? 'Monthly' : 'Annual'} Tuition Fee`,
+            category: 'tuition',
+            amount_due: data.fee_amount,
+            amount_paid: 0,
+            status: 'pending',
+            due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+          }]);
+        }
+
         toast({ title: 'Success', description: 'Student added successfully' });
       }
 

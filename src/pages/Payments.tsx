@@ -129,12 +129,38 @@ const Payments = () => {
         if (error) throw error;
         toast({ title: 'Success', description: 'Payment updated successfully' });
       } else {
-        const { error } = await supabase
+        // Add payment
+        const { error: paymentError } = await supabase
           .from('payments')
           .insert([payload]);
 
-        if (error) throw error;
-        toast({ title: 'Success', description: 'Payment added successfully' });
+        if (paymentError) throw paymentError;
+
+        // Update fee folder - find pending fee folders and update them
+        const { data: feeFolders } = await supabase
+          .from('fee_folders')
+          .select('*')
+          .eq('student_id', data.student_id)
+          .neq('status', 'paid')
+          .order('due_date', { ascending: true })
+          .limit(1);
+
+        if (feeFolders && feeFolders.length > 0) {
+          const folder = feeFolders[0];
+          const newAmountPaid = Number(folder.amount_paid || 0) + data.amount;
+          const amountDue = Number(folder.amount_due);
+          const newStatus = newAmountPaid >= amountDue ? 'paid' : newAmountPaid > 0 ? 'partial' : 'pending';
+
+          await supabase
+            .from('fee_folders')
+            .update({
+              amount_paid: newAmountPaid,
+              status: newStatus,
+            })
+            .eq('id', folder.id);
+        }
+
+        toast({ title: 'Success', description: 'Payment added and fees updated successfully' });
       }
 
       setIsDialogOpen(false);

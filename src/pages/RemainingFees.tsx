@@ -57,24 +57,29 @@ const RemainingFees = () => {
     fetchFeeFolders();
     fetchStudents();
     
-    // Real-time subscription
-    const channel = supabase
+    // Real-time subscriptions
+    const feeFoldersChannel = supabase
       .channel('fee-folders-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'fee_folders',
-        },
-        () => {
-          fetchFeeFolders();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_folders' }, fetchFeeFolders)
+      .subscribe();
+
+    const paymentsChannel = supabase
+      .channel('fee-folders-payments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchFeeFolders)
+      .subscribe();
+
+    const studentsChannel = supabase
+      .channel('fee-folders-students')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        fetchFeeFolders();
+        fetchStudents();
+      })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(feeFoldersChannel);
+      supabase.removeChannel(paymentsChannel);
+      supabase.removeChannel(studentsChannel);
     };
   }, []);
 

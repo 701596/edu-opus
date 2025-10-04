@@ -61,25 +61,21 @@ const Salaries = () => {
   useEffect(() => {
     fetchSalaries();
     fetchStaff();
-    
-    // Real-time subscription
-    const channel = supabase
+
+    // Real-time subscriptions
+    const salariesChannel = supabase
       .channel('salaries-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'salaries',
-        },
-        () => {
-          fetchSalaries();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'salaries' }, fetchSalaries)
+      .subscribe();
+
+    const staffChannel = supabase
+      .channel('salaries-staff')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchStaff)
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(salariesChannel);
+      supabase.removeChannel(staffChannel);
     };
   }, []);
 
