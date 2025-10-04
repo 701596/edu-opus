@@ -82,34 +82,34 @@ const Reports = () => {
 
   const fetchReportData = async () => {
     try {
-      // Fetch all data in parallel
-      const [paymentsResponse, expensesResponse, salariesResponse, feeFoldersResponse] = await Promise.all([
+      // Use the corrected financial overview function
+      const { data: financialData, error: financialError } = await supabase
+        .rpc('get_corrected_financial_overview');
+
+      if (financialError) throw financialError;
+
+      // Fetch additional data for charts
+      const [paymentsResponse, expensesResponse, feeFoldersResponse] = await Promise.all([
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, category, expense_date'),
-        supabase.from('salaries').select('net_amount, payment_date'),
         supabase.from('fee_folders').select('amount_due, amount_paid, status')
       ]);
 
       const payments = paymentsResponse.data || [];
       const expenses = expensesResponse.data || [];
-      const salaries = salariesResponse.data || [];
       const feeFolders = feeFoldersResponse.data || [];
 
-      // Calculate totals
-      const totalIncome = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
-      const totalExpenses = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
-      const totalSalaries = salaries.reduce((sum, salary) => sum + Number(salary.net_amount), 0);
+      // Use corrected financial data
+      const totalIncome = Number(financialData?.[0]?.total_income || 0);
+      const totalExpenses = Number(financialData?.[0]?.total_expenses || 0);
+      const totalSalaries = 0; // Salaries are now integrated into expenses
       const totalFeeFolders = feeFolders.reduce((sum, folder) => sum + Number(folder.amount_due), 0);
-      const remainingFees = feeFolders.reduce((sum, folder) => {
-        const remaining = Number(folder.amount_due) - (Number(folder.amount_paid) || 0);
-        return sum + Math.max(0, remaining);
-      }, 0);
-
-      const netProfit = totalIncome - totalExpenses - totalSalaries;
-      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+      const remainingFees = Number(financialData?.[0]?.remaining_fees || 0);
+      const netProfit = Number(financialData?.[0]?.net_profit || 0);
+      const profitMargin = Number(financialData?.[0]?.profit_margin || 0);
 
       // Calculate monthly trends
-      const monthlyTrends = calculateMonthlyTrends(payments, expenses, salaries);
+      const monthlyTrends = calculateMonthlyTrends(payments, expenses, []);
 
       // Calculate category expenses
       const categoryExpenses = calculateCategoryExpenses(expenses);
@@ -220,7 +220,7 @@ const Reports = () => {
       </div>
 
       {/* Key Metrics */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Income</CardTitle>
@@ -243,16 +243,6 @@ const Reports = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Salaries</CardTitle>
-            <Users className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalSalaries)}</div>
-            <p className="text-xs text-muted-foreground">Staff payments</p>
-          </CardContent>
-        </Card>
 
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

@@ -20,10 +20,10 @@ const staffSchema = z.object({
   salary: z.number().min(0, 'Salary must be positive'),
   salary_type: z.enum(['monthly', 'annually']),
   phone: z.string().min(10, 'Contact number is required'),
+  joining_date: z.string().min(1, 'Joining date is required'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
   department: z.string().optional().or(z.literal('')),
-  hire_date: z.string().optional().or(z.literal('')),
 });
 
 type Staff = z.infer<typeof staffSchema> & { 
@@ -48,10 +48,10 @@ const Staff = () => {
       salary: 0,
       salary_type: 'monthly',
       phone: '',
+      joining_date: new Date().toISOString().split('T')[0],
       email: '',
       address: '',
       department: '',
-      hire_date: '',
     },
   });
 
@@ -92,10 +92,11 @@ const Staff = () => {
         salary: data.salary,
         salary_type: data.salary_type,
         phone: data.phone,
+        joining_date: data.joining_date,
         email: data.email || null,
         address: data.address || null,
         department: data.department || null,
-        hire_date: data.hire_date || new Date().toISOString().split('T')[0],
+        hire_date: data.joining_date,
       };
 
       if (editingStaff) {
@@ -174,12 +175,14 @@ const Staff = () => {
               Add Staff
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-300">
             <DialogHeader>
-              <DialogTitle>{editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}</DialogTitle>
+              <DialogTitle className="animate-in slide-in-from-top-2 duration-300">
+                {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
+              </DialogTitle>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 animate-in slide-in-from-bottom-2 duration-500">
                 <FormField
                   control={form.control}
                   name="name"
@@ -255,6 +258,19 @@ const Staff = () => {
                       <FormLabel>Contact Number</FormLabel>
                       <FormControl>
                         <Input placeholder="Enter contact number" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="joining_date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Joining Date</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

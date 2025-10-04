@@ -30,7 +30,6 @@ const menuItems = [
   { title: 'Staff', url: '/staff', icon: UserCheck },
   { title: 'Payments', url: '/payments', icon: CreditCard },
   { title: 'Expenses', url: '/expenses', icon: Receipt },
-  { title: 'Salaries', url: '/salaries', icon: DollarSign },
   { title: 'Reports', url: '/reports', icon: BarChart3 },
   { title: 'Remaining Fees', url: '/remaining-fees', icon: FolderOpen },
 ];

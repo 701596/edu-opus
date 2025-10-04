@@ -13,7 +13,6 @@ import Students from "./pages/Students";
 import Staff from "./pages/Staff";
 import Payments from "./pages/Payments";
 import Expenses from "./pages/Expenses";
-import Salaries from "./pages/Salaries";
 import Reports from "./pages/Reports";
 import RemainingFees from "./pages/RemainingFees";
 import NotFound from "./pages/NotFound";
@@ -36,7 +35,6 @@ const App = () => (
             <Route path="/staff" element={<Layout><Staff /></Layout>} />
             <Route path="/payments" element={<Layout><Payments /></Layout>} />
             <Route path="/expenses" element={<Layout><Expenses /></Layout>} />
-            <Route path="/salaries" element={<Layout><Salaries /></Layout>} />
             <Route path="/reports" element={<Layout><Reports /></Layout>} />
             <Route path="/remaining-fees" element={<Layout><RemainingFees /></Layout>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

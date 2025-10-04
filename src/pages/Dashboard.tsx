@@ -87,23 +87,21 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch all data in parallel for better performance
+      // Use the corrected financial overview function
+      const { data: financialData, error: financialError } = await supabase
+        .rpc('get_corrected_financial_overview');
+
+      if (financialError) throw financialError;
+
+      // Fetch additional data for charts and recent activity
       const [
-        studentsResponse,
-        staffResponse,
         paymentsResponse,
         expensesResponse,
-        salariesResponse,
-        feeFoldersResponse,
         recentPaymentsResponse,
         pendingFeesResponse
       ] = await Promise.all([
-        supabase.from('students').select('*', { count: 'exact', head: true }),
-        supabase.from('staff').select('*', { count: 'exact', head: true }),
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, expense_date'),
-        supabase.from('salaries').select('net_amount, payment_date'),
-        supabase.from('fee_folders').select('amount_due, amount_paid, status'),
         supabase.from('payments').select(`
           id, amount, payment_date, payment_method,
           students!inner(name)
@@ -114,27 +112,20 @@ const Dashboard = () => {
         `).neq('status', 'paid').order('due_date', { ascending: true }).limit(5)
       ]);
 
-      const studentsCount = studentsResponse.count || 0;
-      const staffCount = staffResponse.count || 0;
       const paymentsData = paymentsResponse.data || [];
       const expensesData = expensesResponse.data || [];
-      const salariesData = salariesResponse.data || [];
-      const feeFoldersData = feeFoldersResponse.data || [];
 
-      // Calculate financial metrics
-      const totalIncome = paymentsData.reduce((sum, payment) => sum + Number(payment.amount), 0);
-      const totalExpenses = expensesData.reduce((sum, expense) => sum + Number(expense.amount), 0);
-      const totalSalaries = salariesData.reduce((sum, salary) => sum + Number(salary.net_amount), 0);
-      const remainingFees = feeFoldersData.reduce((sum, folder) => {
-        const remaining = Number(folder.amount_due) - (Number(folder.amount_paid) || 0);
-        return sum + Math.max(0, remaining);
-      }, 0);
-
-      const netProfit = totalIncome - totalExpenses;
-      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+      // Use the corrected financial data
+      const totalStudents = Number(financialData?.[0]?.total_students || 0);
+      const totalStaff = Number(financialData?.[0]?.total_staff || 0);
+      const totalIncome = Number(financialData?.[0]?.total_income || 0);
+      const totalExpenses = Number(financialData?.[0]?.total_expenses || 0);
+      const remainingFees = Number(financialData?.[0]?.remaining_fees || 0);
+      const netProfit = Number(financialData?.[0]?.net_profit || 0);
+      const profitMargin = Number(financialData?.[0]?.profit_margin || 0);
 
       // Calculate monthly data for the last 6 months
-      const monthlyData = calculateMonthlyData(paymentsData, expensesData, salariesData);
+      const monthlyData = calculateMonthlyData(paymentsData, expensesData, []);
 
       // Calculate payment methods distribution
       const paymentMethods = calculatePaymentMethodsData(paymentsData);
@@ -156,11 +147,11 @@ const Dashboard = () => {
       }));
 
       setStats({
-        totalStudents: studentsCount,
-        totalStaff: staffCount,
+        totalStudents,
+        totalStaff,
         totalIncome,
         totalExpenses,
-        totalSalaries,
+        totalSalaries: 0, // Salaries are now integrated into expenses
         remainingFees,
         netProfit,
         profitMargin,
@@ -296,17 +287,7 @@ const Dashboard = () => {
       </div>
 
       {/* Financial Overview */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Salaries</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalSalaries)}</div>
-            <p className="text-xs text-muted-foreground">Staff payments</p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
