@@ -54,11 +54,23 @@ const Dashboard = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchDashboardData)
       .subscribe();
 
+    const salariesChannel = supabase
+      .channel('dashboard-salaries')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'salaries' }, fetchDashboardData)
+      .subscribe();
+
+    const feeFoldersChannel = supabase
+      .channel('dashboard-fee-folders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_folders' }, fetchDashboardData)
+      .subscribe();
+
     return () => {
       supabase.removeChannel(paymentsChannel);
       supabase.removeChannel(expensesChannel);
       supabase.removeChannel(studentsChannel);
       supabase.removeChannel(staffChannel);
+      supabase.removeChannel(salariesChannel);
+      supabase.removeChannel(feeFoldersChannel);
     };
   }, []);
 

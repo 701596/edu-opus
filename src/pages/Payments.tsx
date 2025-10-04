@@ -18,6 +18,8 @@ const paymentSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
   amount: z.number().min(0, 'Amount must be positive'),
   payment_date: z.string().min(1, 'Payment date is required'),
+  payment_method: z.string().min(1, 'Payment method is required'),
+  currency: z.string().default('USD'),
 });
 
 type Payment = z.infer<typeof paymentSchema> & { id: string; students?: { name: string } };
@@ -29,7 +31,7 @@ const Payments = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
   const { toast } = useToast();
-  const { formatAmount } = useCurrency();
+  const { formatAmount, currency } = useCurrency();
 
   const form = useForm<z.infer<typeof paymentSchema>>({
     resolver: zodResolver(paymentSchema),
@@ -37,6 +39,8 @@ const Payments = () => {
       student_id: '',
       amount: 0,
       payment_date: new Date().toISOString().split('T')[0],
+      payment_method: 'cash',
+      currency: 'USD',
     },
   });
 
@@ -111,7 +115,8 @@ const Payments = () => {
         student_id: data.student_id,
         amount: data.amount,
         payment_date: data.payment_date,
-        payment_method: 'cash',
+        payment_method: data.payment_method,
+        currency: currency.code,
         receipt_number: `PAY-${Date.now()}`,
       };
 
@@ -134,7 +139,13 @@ const Payments = () => {
 
       setIsDialogOpen(false);
       setEditingPayment(null);
-      form.reset();
+      form.reset({
+        student_id: '',
+        amount: 0,
+        payment_date: new Date().toISOString().split('T')[0],
+        payment_method: 'cash',
+        currency: currency.code,
+      });
       fetchPayments();
     } catch (error: any) {
       toast({
@@ -151,6 +162,8 @@ const Payments = () => {
       student_id: payment.student_id,
       amount: Number(payment.amount),
       payment_date: payment.payment_date,
+      payment_method: payment.payment_method,
+      currency: (payment as any).currency || 'USD',
     });
     setIsDialogOpen(true);
   };
@@ -274,6 +287,29 @@ const Payments = () => {
                     )}
                   />
                 </div>
+                <FormField
+                  control={form.control}
+                  name="payment_method"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Method</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select payment method" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                          <SelectItem value="check">Check</SelectItem>
+                          <SelectItem value="online">Online Payment</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
@@ -299,6 +335,7 @@ const Payments = () => {
                 <TableRow>
                   <TableHead>Student</TableHead>
                   <TableHead>Amount Paid</TableHead>
+                  <TableHead>Method</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -306,7 +343,7 @@ const Payments = () => {
               <TableBody>
                 {payments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground">
                       No payments found
                     </TableCell>
                   </TableRow>
@@ -317,6 +354,7 @@ const Payments = () => {
                         {payment.students?.name || 'Unknown Student'}
                       </TableCell>
                       <TableCell className="font-semibold text-primary">{formatAmount(Number(payment.amount))}</TableCell>
+                      <TableCell className="capitalize">{payment.payment_method.replace('_', ' ')}</TableCell>
                       <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
                       <TableCell>
                         <div className="flex space-x-2">

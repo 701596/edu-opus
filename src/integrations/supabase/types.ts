@@ -19,6 +19,7 @@ export type Database = {
           amount: number
           category: string
           created_at: string
+          currency: string | null
           description: string
           expense_date: string
           id: string
@@ -30,6 +31,7 @@ export type Database = {
           amount: number
           category: string
           created_at?: string
+          currency?: string | null
           description: string
           expense_date?: string
           id?: string
@@ -41,6 +43,7 @@ export type Database = {
           amount?: number
           category?: string
           created_at?: string
+          currency?: string | null
           description?: string
           expense_date?: string
           id?: string
@@ -101,6 +104,7 @@ export type Database = {
         Row: {
           amount: number
           created_at: string
+          currency: string | null
           description: string | null
           id: string
           payment_date: string
@@ -112,6 +116,7 @@ export type Database = {
         Insert: {
           amount: number
           created_at?: string
+          currency?: string | null
           description?: string | null
           id?: string
           payment_date?: string
@@ -123,6 +128,7 @@ export type Database = {
         Update: {
           amount?: number
           created_at?: string
+          currency?: string | null
           description?: string | null
           id?: string
           payment_date?: string
@@ -146,6 +152,7 @@ export type Database = {
           amount: number
           bonus: number | null
           created_at: string
+          currency: string | null
           deductions: number | null
           id: string
           net_amount: number
@@ -159,6 +166,7 @@ export type Database = {
           amount: number
           bonus?: number | null
           created_at?: string
+          currency?: string | null
           deductions?: number | null
           id?: string
           net_amount: number
@@ -172,6 +180,7 @@ export type Database = {
           amount?: number
           bonus?: number | null
           created_at?: string
+          currency?: string | null
           deductions?: number | null
           id?: string
           net_amount?: number
@@ -226,6 +235,7 @@ export type Database = {
           name: string
           phone: string
           position: string
+          role: string | null
           salary: number
           salary_type: string | null
           staff_id: string
@@ -241,6 +251,7 @@ export type Database = {
           name: string
           phone: string
           position: string
+          role?: string | null
           salary: number
           salary_type?: string | null
           staff_id: string
@@ -256,6 +267,7 @@ export type Database = {
           name?: string
           phone?: string
           position?: string
+          role?: string | null
           salary?: number
           salary_type?: string | null
           staff_id?: string
@@ -322,7 +334,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      calculate_student_paid_fees: {
+        Args: { student_uuid: string }
+        Returns: number
+      }
+      calculate_student_remaining_fees: {
+        Args: { student_uuid: string }
+        Returns: number
+      }
     }
     Enums: {
       [_ in never]: never

@@ -34,7 +34,7 @@ const Salaries = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSalary, setEditingSalary] = useState<Salary | null>(null);
   const { toast } = useToast();
-  const { formatAmount } = useCurrency();
+  const { formatAmount, currency } = useCurrency();
 
   const form = useForm<z.infer<typeof salarySchema>>({
     resolver: zodResolver(salarySchema),
@@ -125,6 +125,8 @@ const Salaries = () => {
 
   const onSubmit = async (data: z.infer<typeof salarySchema>) => {
     try {
+      const netAmount = data.amount + (data.bonus || 0) - (data.deductions || 0);
+      
       if (editingSalary) {
         const { error } = await supabase
           .from('salaries')
@@ -136,14 +138,16 @@ const Salaries = () => {
             payment_date: data.payment_date,
             bonus: data.bonus || 0,
             deductions: data.deductions || 0,
-            net_amount: data.net_amount,
+            net_amount: netAmount,
+            currency: currency.code,
           })
           .eq('id', editingSalary.id);
 
         if (error) throw error;
         toast({ title: 'Success', description: 'Salary updated successfully' });
       } else {
-        const { error } = await supabase
+        // Insert salary record
+        const { error: salaryError } = await supabase
           .from('salaries')
           .insert([{
             staff_id: data.staff_id,
@@ -153,11 +157,28 @@ const Salaries = () => {
             payment_date: data.payment_date,
             bonus: data.bonus || 0,
             deductions: data.deductions || 0,
-            net_amount: data.net_amount,
+            net_amount: netAmount,
+            currency: currency.code,
           }]);
 
-        if (error) throw error;
-        toast({ title: 'Success', description: 'Salary added successfully' });
+        if (salaryError) throw salaryError;
+
+        // Automatically add to expenses
+        const staffMember = staff.find(s => s.id === data.staff_id);
+        const { error: expenseError } = await supabase
+          .from('expenses')
+          .insert([{
+            category: 'Salary',
+            description: `Salary payment for ${staffMember?.name || 'Staff'}`,
+            vendor: staffMember?.name || 'Staff',
+            amount: netAmount,
+            expense_date: data.payment_date,
+            receipt_number: `SAL-${Date.now()}`,
+            currency: currency.code,
+          }]);
+
+        if (expenseError) throw expenseError;
+        toast({ title: 'Success', description: 'Salary added and recorded in expenses' });
       }
 
       setIsDialogOpen(false);
