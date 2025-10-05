@@ -20,7 +20,7 @@ const staffSchema = z.object({
   salary: z.number().min(0, 'Salary must be positive'),
   salary_type: z.enum(['monthly', 'annually']),
   phone: z.string().min(10, 'Contact number is required'),
-  joining_date: z.string().min(1, 'Joining date is required'),
+  join_date: z.string().min(1, 'Joining date is required'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
   department: z.string().optional().or(z.literal('')),
@@ -48,7 +48,7 @@ const Staff = () => {
       salary: 0,
       salary_type: 'monthly',
       phone: '',
-      joining_date: new Date().toISOString().split('T')[0],
+      join_date: new Date().toISOString().split('T')[0],
       email: '',
       address: '',
       department: '',
@@ -92,11 +92,11 @@ const Staff = () => {
         salary: data.salary,
         salary_type: data.salary_type,
         phone: data.phone,
-        joining_date: data.joining_date,
+        join_date: data.join_date,
         email: data.email || null,
         address: data.address || null,
         department: data.department || null,
-        hire_date: data.joining_date,
+        hire_date: data.join_date,
       };
 
       if (editingStaff) {
@@ -125,6 +125,10 @@ const Staff = () => {
       salary: Number(staffMember.salary),
       salary_type: staffMember.salary_type as 'monthly' | 'annually',
       phone: staffMember.phone || '',
+      join_date: staffMember.join_date || new Date().toISOString().split('T')[0],
+      email: staffMember.email || '',
+      address: staffMember.address || '',
+      department: staffMember.department || '',
     });
     setIsDialogOpen(true);
   };
@@ -265,7 +269,7 @@ const Staff = () => {
                 />
                 <FormField
                   control={form.control}
-                  name="joining_date"
+                  name="join_date"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Joining Date</FormLabel>

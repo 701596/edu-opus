@@ -22,7 +22,7 @@ const studentSchema = z.object({
   fee_type: z.enum(['monthly', 'annually']),
   guardian_name: z.string().min(2, 'Guardian name is required'),
   guardian_phone: z.string().min(10, 'Guardian phone is required'),
-  joining_date: z.string().min(1, 'Joining date is required'),
+  join_date: z.string().min(1, 'Joining date is required'),
   email: z.string().email('Invalid email address').optional().or(z.literal('')),
   phone: z.string().optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
@@ -52,7 +52,7 @@ const Students = () => {
       fee_type: 'monthly',
       guardian_name: '',
       guardian_phone: '',
-      joining_date: new Date().toISOString().split('T')[0],
+      join_date: new Date().toISOString().split('T')[0],
       email: '',
       phone: '',
       address: '',
@@ -98,12 +98,12 @@ const Students = () => {
         fee_type: data.fee_type,
         guardian_name: data.guardian_name,
         guardian_phone: data.guardian_phone,
-        joining_date: data.joining_date,
+        join_date: data.join_date,
         email: data.email || null,
         phone: data.phone || null,
         address: data.address || null,
         date_of_birth: data.date_of_birth || null,
-        enrollment_date: data.joining_date,
+        enrollment_date: data.join_date,
       };
 
       if (editingStudent) {
@@ -143,6 +143,11 @@ const Students = () => {
       fee_type: student.fee_type as 'monthly' | 'annually',
       guardian_name: student.guardian_name || '',
       guardian_phone: student.guardian_phone || '',
+      join_date: student.join_date || new Date().toISOString().split('T')[0],
+      email: student.email || '',
+      phone: student.phone || '',
+      address: student.address || '',
+      date_of_birth: student.date_of_birth || '',
     });
     setIsDialogOpen(true);
   };
@@ -296,7 +301,7 @@ const Students = () => {
                 />
                 <FormField
                   control={form.control}
-                  name="joining_date"
+                  name="join_date"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Joining Date</FormLabel>
