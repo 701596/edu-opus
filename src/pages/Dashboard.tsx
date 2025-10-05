@@ -87,21 +87,21 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // Use the corrected financial overview function
-      const { data: financialData, error: financialError } = await supabase
-        .rpc('get_corrected_financial_overview');
-
-      if (financialError) throw financialError;
-
-      // Fetch additional data for charts and recent activity
+      // Fetch all data in parallel
       const [
+        studentsResponse,
+        staffResponse,
         paymentsResponse,
         expensesResponse,
+        salariesResponse,
         recentPaymentsResponse,
         pendingFeesResponse
       ] = await Promise.all([
+        supabase.from('students').select('fee_amount'),
+        supabase.from('staff').select('id'),
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, expense_date'),
+        supabase.from('salaries').select('net_amount, payment_date'),
         supabase.from('payments').select(`
           id, amount, payment_date, payment_method,
           students!inner(name)
@@ -112,20 +112,26 @@ const Dashboard = () => {
         `).neq('status', 'paid').order('due_date', { ascending: true }).limit(5)
       ]);
 
+      const students = studentsResponse.data || [];
+      const staff = staffResponse.data || [];
       const paymentsData = paymentsResponse.data || [];
       const expensesData = expensesResponse.data || [];
+      const salariesData = salariesResponse.data || [];
 
-      // Use the corrected financial data
-      const totalStudents = Number(financialData?.[0]?.total_students || 0);
-      const totalStaff = Number(financialData?.[0]?.total_staff || 0);
-      const totalIncome = Number(financialData?.[0]?.total_income || 0);
-      const totalExpenses = Number(financialData?.[0]?.total_expenses || 0);
-      const remainingFees = Number(financialData?.[0]?.remaining_fees || 0);
-      const netProfit = Number(financialData?.[0]?.net_profit || 0);
-      const profitMargin = Number(financialData?.[0]?.profit_margin || 0);
+      // Calculate financial metrics
+      const totalStudents = students.length;
+      const totalStaff = staff.length;
+      const totalIncome = paymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const totalExpensesAmount = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const totalSalariesAmount = salariesData.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
+      const totalExpenses = totalExpensesAmount + totalSalariesAmount;
+      const totalPotentialIncome = students.reduce((sum, s) => sum + Number(s.fee_amount || 0), 0);
+      const remainingFees = totalPotentialIncome - totalIncome;
+      const netProfit = totalIncome - totalExpenses;
+      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
 
       // Calculate monthly data for the last 6 months
-      const monthlyData = calculateMonthlyData(paymentsData, expensesData, []);
+      const monthlyData = calculateMonthlyData(paymentsData, expensesData, salariesData);
 
       // Calculate payment methods distribution
       const paymentMethods = calculatePaymentMethodsData(paymentsData);

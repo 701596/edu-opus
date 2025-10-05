@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Users, Receipt, CreditCard, BarChart3 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { TrendingUp, TrendingDown, DollarSign, Receipt, CreditCard, BarChart3 } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 
 interface ReportData {
@@ -82,34 +82,41 @@ const Reports = () => {
 
   const fetchReportData = async () => {
     try {
-      // Use the corrected financial overview function
-      const { data: financialData, error: financialError } = await supabase
-        .rpc('get_corrected_financial_overview');
-
-      if (financialError) throw financialError;
-
-      // Fetch additional data for charts
-      const [paymentsResponse, expensesResponse, feeFoldersResponse] = await Promise.all([
+      // Fetch all data in parallel
+      const [
+        paymentsResponse,
+        expensesResponse,
+        salariesResponse,
+        feeFoldersResponse,
+        studentsResponse
+      ] = await Promise.all([
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, category, expense_date'),
-        supabase.from('fee_folders').select('amount_due, amount_paid, status')
+        supabase.from('salaries').select('net_amount, payment_date'),
+        supabase.from('fee_folders').select('amount_due, amount_paid, status'),
+        supabase.from('students').select('fee_amount')
       ]);
 
       const payments = paymentsResponse.data || [];
       const expenses = expensesResponse.data || [];
+      const salariesData = salariesResponse.data || [];
       const feeFolders = feeFoldersResponse.data || [];
+      const students = studentsResponse.data || [];
 
-      // Use corrected financial data
-      const totalIncome = Number(financialData?.[0]?.total_income || 0);
-      const totalExpenses = Number(financialData?.[0]?.total_expenses || 0);
-      const totalSalaries = 0; // Salaries are now integrated into expenses
+      // Calculate financial metrics
+      const totalIncome = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const totalExpensesAmount = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const totalSalariesAmount = salariesData.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
+      const totalExpenses = totalExpensesAmount + totalSalariesAmount;
+      const totalSalaries = totalSalariesAmount;
       const totalFeeFolders = feeFolders.reduce((sum, folder) => sum + Number(folder.amount_due), 0);
-      const remainingFees = Number(financialData?.[0]?.remaining_fees || 0);
-      const netProfit = Number(financialData?.[0]?.net_profit || 0);
-      const profitMargin = Number(financialData?.[0]?.profit_margin || 0);
+      const totalPotentialIncome = students.reduce((sum, s) => sum + Number(s.fee_amount || 0), 0);
+      const remainingFees = totalPotentialIncome - totalIncome;
+      const netProfit = totalIncome - totalExpenses;
+      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
 
       // Calculate monthly trends
-      const monthlyTrends = calculateMonthlyTrends(payments, expenses, []);
+      const monthlyTrends = calculateMonthlyTrends(payments, expenses, salariesData);
 
       // Calculate category expenses
       const categoryExpenses = calculateCategoryExpenses(expenses);
@@ -146,15 +153,15 @@ const Reports = () => {
       const yearMonth = date.toISOString().substring(0, 7);
       
       const monthlyIncome = payments
-        .filter(p => p.payment_date.startsWith(yearMonth))
+        .filter(p => p.payment_date?.startsWith(yearMonth))
         .reduce((sum, p) => sum + Number(p.amount), 0);
       
       const monthlyExpenses = expenses
-        .filter(e => e.expense_date.startsWith(yearMonth))
+        .filter(e => e.expense_date?.startsWith(yearMonth))
         .reduce((sum, e) => sum + Number(e.amount), 0);
       
       const monthlySalaries = salaries
-        .filter(s => s.payment_date.startsWith(yearMonth))
+        .filter(s => s.payment_date?.startsWith(yearMonth))
         .reduce((sum, s) => sum + Number(s.net_amount), 0);
       
       months.push({

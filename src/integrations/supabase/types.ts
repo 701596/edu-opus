@@ -232,6 +232,7 @@ export type Database = {
           email: string | null
           hire_date: string
           id: string
+          join_date: string | null
           name: string
           phone: string
           position: string
@@ -248,6 +249,7 @@ export type Database = {
           email?: string | null
           hire_date: string
           id?: string
+          join_date?: string | null
           name: string
           phone: string
           position: string
@@ -264,6 +266,7 @@ export type Database = {
           email?: string | null
           hire_date?: string
           id?: string
+          join_date?: string | null
           name?: string
           phone?: string
           position?: string
@@ -288,6 +291,7 @@ export type Database = {
           guardian_name: string | null
           guardian_phone: string | null
           id: string
+          join_date: string | null
           name: string
           phone: string | null
           student_id: string
@@ -305,6 +309,7 @@ export type Database = {
           guardian_name?: string | null
           guardian_phone?: string | null
           id?: string
+          join_date?: string | null
           name: string
           phone?: string | null
           student_id: string
@@ -322,6 +327,7 @@ export type Database = {
           guardian_name?: string | null
           guardian_phone?: string | null
           id?: string
+          join_date?: string | null
           name?: string
           phone?: string | null
           student_id?: string
