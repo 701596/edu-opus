@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+  "test:payments": "node --experimental-specifier-resolution=node --es-module-specifier-resolution=node ./scripts/testPayments.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

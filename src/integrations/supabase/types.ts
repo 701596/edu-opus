@@ -147,6 +147,75 @@ export type Database = {
           },
         ]
       }
+      reports: {
+        Row: {
+          id: string
+          year: number
+          month: number
+          total_income: string | number
+          total_salaries: string | number
+          other_expenses: string | number
+          total_expenses: string | number
+          profit: string | number
+          generated_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          year: number
+          month: number
+          total_income?: string | number
+          total_salaries?: string | number
+          other_expenses?: string | number
+          total_expenses?: string | number
+          profit?: string | number
+          generated_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          year?: number
+          month?: number
+          total_income?: string | number
+          total_salaries?: string | number
+          other_expenses?: string | number
+          total_expenses?: string | number
+          profit?: string | number
+          generated_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_audit: {
+        Row: {
+          id: string
+          student_id: string
+          payment_id: string
+          method: string
+          recorded_at: string
+          amount: string | number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          student_id: string
+          payment_id: string
+          method: string
+          recorded_at?: string
+          amount: string | number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          student_id?: string
+          payment_id?: string
+          method?: string
+          recorded_at?: string
+          amount?: string | number
+          created_at?: string
+        }
+        Relationships: []
+      }
       salaries: {
         Row: {
           amount: number

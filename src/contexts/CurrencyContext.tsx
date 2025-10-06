@@ -43,7 +43,7 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
     
     // Set up real-time subscription
     // Minimal typed payload shape for realtime changes handler
-    type SettingsPayload = { new?: { value?: unknown } };
+  type SettingsPayload = { new?: { value?: unknown } };
 
     const channel = supabase
       .channel('settings-changes')
@@ -57,8 +57,15 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
         },
         (payload: SettingsPayload) => {
           if (payload.new && 'value' in payload.new && payload.new.value) {
-            // value comes from the DB as JSON; perform a safe cast from unknown
-            setCurrencyState((payload.new.value as unknown) as Currency);
+            // value comes from the DB as JSON; attempt to parse into Currency
+            try {
+              const v = payload.new?.value;
+              if (v && typeof v === 'object') {
+                setCurrencyState(v as Currency);
+              }
+            } catch {
+              // ignore malformed payload
+            }
           }
         }
       )
@@ -92,8 +99,8 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
       const { error } = await supabase
         .from('settings')
         .update({
-          // store as JSON
-          value: newCurrency as unknown,
+          // store as JSON (assert to Json type defined in supabase types)
+          value: newCurrency as unknown as import('@/integrations/supabase/types').Json,
         })
         .eq('key', 'currency');
 

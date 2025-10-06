@@ -60,7 +60,7 @@ const Students = () => {
     },
   });
 
-  const fetchStudents = React.useCallback(async () => {
+  const fetchStudents = async () => {
     try {
       const { data, error } = await supabase
         .from('students')
@@ -75,7 +75,7 @@ const Students = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  };
 
   useEffect(() => {
     fetchStudents();
@@ -86,24 +86,7 @@ const Students = () => {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchStudents]);
-
-  const fetchStudents = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setStudents((data || []) as Student[]);
-    } catch (error) {
-      console.error('Error fetching students:', error);
-      toast({ title: 'Error', description: 'Failed to fetch students', variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, []);
 
   const onSubmit = async (data: z.infer<typeof studentSchema>) => {
     try {
