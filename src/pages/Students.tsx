@@ -60,16 +60,33 @@ const Students = () => {
     },
   });
 
+  const fetchStudents = React.useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('students')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setStudents((data || []) as Student[]);
+    } catch (err: unknown) {
+      console.error('Error fetching students:', err);
+      toast({ title: 'Error', description: 'Failed to fetch students', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
   useEffect(() => {
     fetchStudents();
-    
+
     const channel = supabase
       .channel('students-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchStudents)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => fetchStudents())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [fetchStudents]);
 
   const fetchStudents = async () => {
     try {

@@ -34,22 +34,28 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   useEffect(() => {
     // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: sessionData }) => {
+      setSession(sessionData.session ?? null);
+      setUser(sessionData.session?.user ?? null);
+      setLoading(false);
+    });
+
+    return () => {
+      // unsubscribe if available
+      try {
+        data?.subscription?.unsubscribe?.();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('Failed to unsubscribe auth listener', err);
+      }
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
@@ -73,13 +79,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
       
       return { error };
-    } catch (error: any) {
+    } catch (err: unknown) {
       toast({
-        title: "Sign In Error",
-        description: "An unexpected error occurred.",
-        variant: "destructive",
+        title: 'Sign In Error',
+        description: (err as { message?: string })?.message ?? 'An unexpected error occurred.',
+        variant: 'destructive',
       });
-      return { error };
+      return { error: err } as any;
     }
   };
 
@@ -112,13 +118,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
       
       return { error };
-    } catch (error: any) {
+    } catch (err: unknown) {
       toast({
-        title: "Sign Up Error",
-        description: "An unexpected error occurred.",
-        variant: "destructive",
+        title: 'Sign Up Error',
+        description: (err as { message?: string })?.message ?? 'An unexpected error occurred.',
+        variant: 'destructive',
       });
-      return { error };
+      return { error: err } as any;
     }
   };
 
