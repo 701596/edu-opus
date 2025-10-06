@@ -100,6 +100,51 @@ export type Database = {
           },
         ]
       }
+      payment_audit: {
+        Row: {
+          amount: number
+          created_at: string | null
+          id: string
+          method: string
+          payment_id: string
+          recorded_at: string | null
+          student_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          id?: string
+          method: string
+          payment_id: string
+          recorded_at?: string | null
+          student_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          id?: string
+          method?: string
+          payment_id?: string
+          recorded_at?: string | null
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_audit_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_audit_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount: number
@@ -146,6 +191,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      reports: {
+        Row: {
+          created_at: string | null
+          id: string
+          month_start: string
+          net: number | null
+          total_expense: number | null
+          total_income: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          month_start: string
+          net?: number | null
+          total_expense?: number | null
+          total_income?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          month_start?: string
+          net?: number | null
+          total_expense?: number | null
+          total_income?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       salaries: {
         Row: {
@@ -347,6 +422,10 @@ export type Database = {
       calculate_student_remaining_fees: {
         Args: { student_uuid: string }
         Returns: number
+      }
+      recalc_monthly_report: {
+        Args: { p_month: number; p_year: number }
+        Returns: undefined
       }
     }
     Enums: {
