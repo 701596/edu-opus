@@ -1,11 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
 
-// Load local .env for script execution
-dotenv.config();
+// Load local .env if present (simple parser) to avoid adding dotenv dependency
+const envPath = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envPath)) {
+  const raw = fs.readFileSync(envPath, 'utf8');
+  raw.split(/\r?\n/).forEach((line) => {
+    const m = line.match(/^\s*([^=]+)=(.*)$/);
+    if (m) {
+      const key = m[1].trim();
+      let val = m[2].trim();
+      if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+      if (!process.env[key]) process.env[key] = val;
+    }
+  });
+}
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.error('Please set VITE_SUPABASE_URL and SUPABASE_SERVICE_KEY or VITE_SUPABASE_PUBLISHABLE_KEY in your environment');

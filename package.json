@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
   "test:payments": "node --experimental-specifier-resolution=node --es-module-specifier-resolution=node ./scripts/testPayments.mjs",
+  "test:fullflow": "node --experimental-specifier-resolution=node --es-module-specifier-resolution=node ./scripts/testFullFlow.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
