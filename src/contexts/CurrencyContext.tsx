@@ -42,6 +42,9 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
     fetchCurrency();
     
     // Set up real-time subscription
+    // Minimal typed payload shape for realtime changes handler
+  type SettingsPayload = { new?: { value?: unknown } };
+
     const channel = supabase
       .channel('settings-changes')
       .on(
@@ -52,9 +55,17 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
           table: 'settings',
           filter: 'key=eq.currency',
         },
-        (payload) => {
-          if (payload.new && 'value' in payload.new) {
-            setCurrencyState(payload.new.value as any as Currency);
+        (payload: SettingsPayload) => {
+          if (payload.new && 'value' in payload.new && payload.new.value) {
+            // value comes from the DB as JSON; attempt to parse into Currency
+            try {
+              const v = payload.new?.value;
+              if (v && typeof v === 'object') {
+                setCurrencyState(v as Currency);
+              }
+            } catch {
+              // ignore malformed payload
+            }
           }
         }
       )
@@ -75,10 +86,11 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
 
       if (error) throw error;
       if (data?.value) {
-        setCurrencyState(data.value as any as Currency);
+        setCurrencyState((data.value as unknown) as Currency);
       }
-    } catch (error) {
-      console.error('Error fetching currency:', error);
+    } catch (err: unknown) {
+      // Avoid assuming shape of error
+      console.error('Error fetching currency:', err);
     }
   };
 
@@ -87,21 +99,23 @@ export const CurrencyProvider = ({ children }: { children: ReactNode }) => {
       const { error } = await supabase
         .from('settings')
         .update({
-          value: newCurrency as any,
+          // store as JSON (assert to Json type defined in supabase types)
+          value: newCurrency as unknown as import('@/integrations/supabase/types').Json,
         })
         .eq('key', 'currency');
 
       if (error) throw error;
-      
+
       setCurrencyState(newCurrency);
       toast({
         title: 'Success',
         description: `Currency changed to ${newCurrency.name}`,
       });
-    } catch (error: any) {
+    } catch (err: unknown) {
+      const message = (err as { message?: string })?.message ?? 'Failed to update currency';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to update currency',
+        description: message,
         variant: 'destructive',
       });
     }

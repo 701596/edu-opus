@@ -82,7 +82,60 @@ const Reports = () => {
 
   const fetchReportData = async () => {
     try {
-      // Fetch all data in parallel
+      // Prefer using precomputed reports table if available
+      // Fetch precomputed reports when available
+      const { data: reportsData, error: reportsError } = await supabase
+        .from('reports')
+        .select('*')
+        .order('year', { ascending: false })
+        .order('month', { ascending: false })
+        .limit(6);
+
+      if (!reportsError && reportsData && reportsData.length > 0) {
+        // Map reports rows to the shapes the UI expects
+        const monthlyTrends = (reportsData as any[])
+          .map(r => ({ month: `${r.month}/${r.year.toString().slice(-2)}`, income: Number(r.total_income || 0), expenses: Number(r.total_expenses || 0), salaries: Number(r.total_salaries || 0) }))
+          .reverse();
+
+        // Use latest report row to populate totals, falling back to sums across rows
+        const latest = reportsData[0] as any;
+
+        const totalIncome = Number(latest?.total_income || reportsData.reduce((s: number, r: any) => s + Number(r.total_income || 0), 0));
+        const totalExpenses = Number(latest?.total_expenses || reportsData.reduce((s: number, r: any) => s + Number(r.total_expenses || 0), 0));
+        const totalSalaries = Number(latest?.total_salaries || reportsData.reduce((s: number, r: any) => s + Number(r.total_salaries || 0), 0));
+        const totalFeeFolders = 0; // reports table doesn't currently track fee folder counts; keep 0
+        const remainingFees = Number(latest?.remaining_fees || 0) || 0;
+        const netProfit = Number(latest?.profit || 0) || (totalIncome - totalExpenses);
+        const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+
+        // Category expenses and payment methods still derived client-side from base tables
+        const [expensesResponse, paymentsResponse] = await Promise.all([
+          supabase.from('expenses').select('amount, category, expense_date'),
+          supabase.from('payments').select('amount, payment_method, payment_date'),
+        ]);
+
+        const expenses = expensesResponse.data || [];
+        const payments = paymentsResponse.data || [];
+
+        const categoryExpenses = calculateCategoryExpenses(expenses);
+        const paymentMethods = calculatePaymentMethods(payments);
+
+        setReportData({
+          totalIncome,
+          totalExpenses,
+          totalSalaries,
+          totalFeeFolders,
+          remainingFees,
+          netProfit,
+          profitMargin,
+          monthlyTrends,
+          categoryExpenses,
+          paymentMethods,
+        });
+        return;
+      }
+
+      // Fallback: compute from raw tables as before
       const [
         paymentsResponse,
         expensesResponse,

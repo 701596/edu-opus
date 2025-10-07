@@ -71,3 +71,24 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Environment variables (local & CI)
+
+This project expects a few VITE_* environment variables for client-side configuration (these are exposed to the browser by Vite). Do NOT commit a `.env` file with real keys.
+
+- Create a local `.env` for development (it is in `.gitignore`) and set the values from your Supabase project. Example values are available in `env.example`.
+
+Example `.env` (local):
+
+```properties
+VITE_SUPABASE_PROJECT_ID=your_project_id
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+```
+
+CI / Hosting (Vercel, Netlify, etc.):
+
+- Add the same variables to your host or CI's secrets/settings (Vercel/Netlify/Cloud providers). Use the provider's dashboard to set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` so builds can reference them.
+
+Security note: If a key was accidentally committed, rotate the key in Supabase immediately and replace it in CI and local environments.
+

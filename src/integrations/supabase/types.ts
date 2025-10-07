@@ -1,51 +1,122 @@
 export type Json =
   | string
   | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[]
-
-export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
-  }
-  public: {
-    Tables: {
-      expenses: {
+      payments: {
         Row: {
           amount: number
-          category: string
           created_at: string
           currency: string | null
-          description: string
-          expense_date: string
+          description: string | null
           id: string
+          payment_date: string
+          payment_method: string
           receipt_number: string
+          student_id: string
           updated_at: string
-          vendor: string
         }
         Insert: {
           amount: number
-          category: string
           created_at?: string
           currency?: string | null
-          description: string
-          expense_date?: string
+          description?: string | null
           id?: string
+          payment_date?: string
+          payment_method: string
           receipt_number: string
+          student_id: string
           updated_at?: string
-          vendor: string
         }
         Update: {
           amount?: number
-          category?: string
           created_at?: string
           currency?: string | null
-          description?: string
-          expense_date?: string
+          description?: string | null
+          id?: string
+          payment_date?: string
+          payment_method?: string
+          receipt_number?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reports: {
+        Row: {
+          id: string
+          year: number
+          month: number
+          total_income: number
+          total_salaries: number
+          other_expenses: number
+          total_expenses: number
+          profit: number
+          generated_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          year: number
+          month: number
+          total_income?: number
+          total_salaries?: number
+          other_expenses?: number
+          total_expenses?: number
+          profit?: number
+          generated_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          year?: number
+          month?: number
+          total_income?: number
+          total_salaries?: number
+          other_expenses?: number
+          total_expenses?: number
+          profit?: number
+          generated_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_audit: {
+        Row: {
+          id: string
+          student_id: string
+          payment_id: string
+          method: string
+          recorded_at: string | null
+          amount: number
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          student_id: string
+          payment_id: string
+          method: string
+          recorded_at?: string | null
+          amount: number
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          student_id?: string
+          payment_id?: string
+          method?: string
+          recorded_at?: string | null
+          amount?: number
+          created_at?: string | null
+        }
+        Relationships: []
+      }
           id?: string
           receipt_number?: string
           updated_at?: string
@@ -194,6 +265,7 @@ export type Database = {
       }
       reports: {
         Row: {
+<<<<<<< HEAD
           created_at: string | null
           id: string
           month_start: string
@@ -219,6 +291,72 @@ export type Database = {
           total_expense?: number | null
           total_income?: number | null
           updated_at?: string | null
+=======
+          id: string
+          year: number
+          month: number
+          total_income: string | number
+          total_salaries: string | number
+          other_expenses: string | number
+          total_expenses: string | number
+          profit: string | number
+          generated_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          year: number
+          month: number
+          total_income?: string | number
+          total_salaries?: string | number
+          other_expenses?: string | number
+          total_expenses?: string | number
+          profit?: string | number
+          generated_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          year?: number
+          month?: number
+          total_income?: string | number
+          total_salaries?: string | number
+          other_expenses?: string | number
+          total_expenses?: string | number
+          profit?: string | number
+          generated_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_audit: {
+        Row: {
+          id: string
+          student_id: string
+          payment_id: string
+          method: string
+          recorded_at: string
+          amount: string | number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          student_id: string
+          payment_id: string
+          method: string
+          recorded_at?: string
+          amount: string | number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          student_id?: string
+          payment_id?: string
+          method?: string
+          recorded_at?: string
+          amount?: string | number
+          created_at?: string
+>>>>>>> security/env-and-lint-fixes
         }
         Relationships: []
       }

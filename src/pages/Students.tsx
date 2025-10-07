@@ -60,17 +60,6 @@ const Students = () => {
     },
   });
 
-  useEffect(() => {
-    fetchStudents();
-    
-    const channel = supabase
-      .channel('students-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchStudents)
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
   const fetchStudents = async () => {
     try {
       const { data, error } = await supabase
@@ -80,13 +69,24 @@ const Students = () => {
 
       if (error) throw error;
       setStudents((data || []) as Student[]);
-    } catch (error) {
-      console.error('Error fetching students:', error);
+    } catch (err: unknown) {
+      console.error('Error fetching students:', err);
       toast({ title: 'Error', description: 'Failed to fetch students', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchStudents();
+
+    const channel = supabase
+      .channel('students-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => fetchStudents())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const onSubmit = async (data: z.infer<typeof studentSchema>) => {
     try {

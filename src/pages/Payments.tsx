@@ -129,15 +129,9 @@ const Payments = () => {
         if (error) throw error;
         toast({ title: 'Success', description: 'Payment updated successfully' });
       } else {
-        // Add payment
-        const { error: paymentError } = await supabase
-          .from('payments')
-          .insert([payload]);
-
-        if (paymentError) throw paymentError;
-
-        // Update fee folder - find pending fee folders and update them
-        const { data: feeFolders } = await supabase
+        // Add payment - client-side validation before insert
+        // Fetch earliest unpaid fee folder for this student
+        const { data: feeFolders, error: feeError } = await supabase
           .from('fee_folders')
           .select('*')
           .eq('student_id', data.student_id)
@@ -145,8 +139,52 @@ const Payments = () => {
           .order('due_date', { ascending: true })
           .limit(1);
 
-        if (feeFolders && feeFolders.length > 0) {
-          const folder = feeFolders[0];
+        if (feeError) throw feeError;
+
+        const earliest = feeFolders && feeFolders.length > 0 ? feeFolders[0] : null;
+
+        if (earliest) {
+          const remaining = Number(earliest.amount_due) - Number(earliest.amount_paid || 0);
+          if (data.amount > remaining) {
+            // Prevent overpayment on client-side and provide helpful error
+            toast({ title: 'Validation error', description: `Payment exceeds remaining amount for selected fee (${formatAmount(remaining)})`, variant: 'destructive' });
+            return;
+          }
+        }
+
+
+        // Log minimal info locally; perform server-side audit insertion after payment
+        console.info('Creating payment', { student_id: data.student_id, amount: data.amount, method: data.payment_method, date: data.payment_date });
+
+        const { data: insertedPayments, error: paymentError } = await supabase
+          .from('payments')
+          .insert([payload])
+          .select()
+          .limit(1);
+
+        if (paymentError) throw paymentError;
+
+        const createdPayment = insertedPayments && insertedPayments[0];
+
+        // Server-side audit entry: write to payment_audit table
+        try {
+          await supabase.from('payment_audit').insert([
+            {
+              student_id: data.student_id,
+              payment_id: createdPayment?.id,
+              method: data.payment_method,
+              amount: data.amount,
+            },
+          ]);
+        } catch (auditErr) {
+          // Don't block payment success on audit failures, but log
+          // eslint-disable-next-line no-console
+          console.warn('Failed to write payment audit record', auditErr);
+        }
+
+        // On success, optionally update fee folder to reflect partial/paid state (DB trigger also ensures consistency)
+        if (earliest) {
+          const folder = earliest;
           const newAmountPaid = Number(folder.amount_paid || 0) + data.amount;
           const amountDue = Number(folder.amount_due);
           const newStatus = newAmountPaid >= amountDue ? 'paid' : newAmountPaid > 0 ? 'partial' : 'pending';
