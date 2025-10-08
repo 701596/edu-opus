@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -33,7 +33,7 @@ type FeeFolder = z.infer<typeof feeFolderSchema> & {
 
 const RemainingFees = () => {
   const [feeFolders, setFeeFolders] = useState<FeeFolder[]>([]);
-  const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
+  const [students, setStudents] = useState<{ id: string; name: string; remaining_fee?: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingFeeFolder, setEditingFeeFolder] = useState<FeeFolder | null>(null);
@@ -120,7 +120,7 @@ const RemainingFees = () => {
     try {
       const { data, error } = await supabase
         .from('students')
-        .select('id, name')
+        .select('id, name, remaining_fee')
         .order('name');
 
       if (error) throw error;
@@ -230,6 +230,7 @@ const RemainingFees = () => {
   };
 
   const totalRemaining = feeFolders.reduce((sum, folder) => sum + (folder.remaining_amount || 0), 0);
+  const totalStudentRemainingFees = students.reduce((sum, student) => sum + Number(student.remaining_fee || 0), 0);
 
   if (loading) {
     return (
@@ -261,6 +262,9 @@ const RemainingFees = () => {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{editingFeeFolder ? 'Edit Fee Folder' : 'Add New Fee Folder'}</DialogTitle>
+              <DialogDescription>
+                {editingFeeFolder ? 'Update fee folder details' : 'Create a new fee folder for a student'}
+              </DialogDescription>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -314,6 +318,7 @@ const RemainingFees = () => {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
+                          <SelectItem value="school_fee">School Fee</SelectItem>
                           <SelectItem value="tuition">Tuition</SelectItem>
                           <SelectItem value="library">Library</SelectItem>
                           <SelectItem value="lab">Lab Fees</SelectItem>
@@ -392,17 +397,30 @@ const RemainingFees = () => {
         </Dialog>
       </div>
 
-      {/* Summary Card */}
-      <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Total Outstanding Fees</CardTitle>
-          <CreditCard className="h-4 w-4 text-destructive" />
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold text-destructive">{formatAmount(totalRemaining)}</div>
-          <p className="text-xs text-muted-foreground">Across {feeFolders.filter(f => f.remaining_amount! > 0).length} folders</p>
-        </CardContent>
-      </Card>
+      {/* Summary Cards */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Student Outstanding Fees</CardTitle>
+            <CreditCard className="h-4 w-4 text-destructive" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-destructive">{formatAmount(totalStudentRemainingFees)}</div>
+            <p className="text-xs text-muted-foreground">Total remaining across all students</p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Fee Folders Outstanding</CardTitle>
+            <FolderOpen className="h-4 w-4 text-destructive" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-destructive">{formatAmount(totalRemaining)}</div>
+            <p className="text-xs text-muted-foreground">Across {feeFolders.filter(f => f.remaining_amount! > 0).length} folders</p>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>

@@ -97,7 +97,7 @@ const Dashboard = () => {
         recentPaymentsResponse,
         pendingFeesResponse
       ] = await Promise.all([
-        supabase.from('students').select('fee_amount'),
+        supabase.from('students').select('total_fee, remaining_fee'),
         supabase.from('staff').select('id'),
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, expense_date'),
@@ -106,10 +106,9 @@ const Dashboard = () => {
           id, amount, payment_date, payment_method,
           students!inner(name)
         `).order('payment_date', { ascending: false }).limit(5),
-        supabase.from('fee_folders').select(`
-          amount_due, amount_paid, due_date,
-          students!inner(name)
-        `).neq('status', 'paid').order('due_date', { ascending: true }).limit(5)
+        supabase.from('students').select(`
+          id, name, remaining_fee
+        `).gt('remaining_fee', 0).order('remaining_fee', { ascending: false }).limit(5)
       ]);
 
       const students = studentsResponse.data || [];
@@ -125,8 +124,7 @@ const Dashboard = () => {
       const totalExpensesAmount = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const totalSalariesAmount = salariesData.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
       const totalExpenses = totalExpensesAmount + totalSalariesAmount;
-      const totalPotentialIncome = students.reduce((sum, s) => sum + Number(s.fee_amount || 0), 0);
-      const remainingFees = totalPotentialIncome - totalIncome;
+      const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
       const netProfit = totalIncome - totalExpenses;
       const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
 
@@ -146,10 +144,10 @@ const Dashboard = () => {
       }));
 
       // Format pending fees
-      const pendingFees = (pendingFeesResponse.data || []).map(folder => ({
-        student_name: folder.students?.name || 'Unknown',
-        amount: Number(folder.amount_due) - (Number(folder.amount_paid) || 0),
-        due_date: folder.due_date
+      const pendingFees = (pendingFeesResponse.data || []).map(student => ({
+        student_name: student.name || 'Unknown',
+        amount: Number(student.remaining_fee || 0),
+        due_date: '' // Not tracking due date per student, only per fee folder
       }));
 
       setStats({

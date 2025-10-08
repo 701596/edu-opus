@@ -75,7 +75,7 @@ const Students = () => {
     try {
       const { data, error } = await supabase
         .from('students')
-        .select('*')
+        .select('*, total_fee, remaining_fee, payment_status')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -390,15 +390,16 @@ const Students = () => {
                   <TableHead>Name</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Guardian</TableHead>
-                  <TableHead>Fee Amount</TableHead>
-                  <TableHead>Fee Type</TableHead>
+                  <TableHead>Total Fee</TableHead>
+                  <TableHead>Remaining Fee</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {students.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No students found
                     </TableCell>
                   </TableRow>
@@ -409,9 +410,22 @@ const Students = () => {
                       <TableCell>{student.class || '-'}</TableCell>
                       <TableCell>{student.guardian_name || '-'}</TableCell>
                       <TableCell className="font-semibold text-primary">
-                        {formatAmount(Number(student.fee_amount || 0))}
+                        {formatAmount(Number((student as any).total_fee || student.fee_amount || 0))}
                       </TableCell>
-                      <TableCell className="capitalize">{student.fee_type}</TableCell>
+                      <TableCell className="font-semibold text-orange-600">
+                        {formatAmount(Number((student as any).remaining_fee || 0))}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
+                          (student as any).payment_status === 'paid' 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
+                            : (student as any).payment_status === 'partial'
+                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
+                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                        }`}>
+                          {(student as any).payment_status || 'pending'}
+                        </span>
+                      </TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button variant="outline" size="sm" onClick={() => handleEdit(student)}>
