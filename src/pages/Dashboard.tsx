@@ -11,11 +11,10 @@ interface DashboardStats {
   totalStaff: number;
   totalIncome: number;
   totalExpenses: number;
-  totalSalaries: number;
   remainingFees: number;
   netProfit: number;
   profitMargin: number;
-  monthlyData: Array<{ month: string; income: number; expenses: number; salaries: number }>;
+  monthlyData: Array<{ month: string; income: number; expenses: number }>;
   paymentMethods: Array<{ name: string; value: number; amount: number }>;
   recentPayments: Array<{ id: string; student_name: string; amount: number; date: string; method: string }>;
   pendingFees: Array<{ student_name: string; amount: number; due_date: string }>;
@@ -29,7 +28,6 @@ const Dashboard = () => {
     totalStaff: 0,
     totalIncome: 0,
     totalExpenses: 0,
-    totalSalaries: 0,
     remainingFees: 0,
     netProfit: 0,
     profitMargin: 0,
@@ -65,11 +63,6 @@ const Dashboard = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, fetchDashboardData)
       .subscribe();
 
-    const salariesChannel = supabase
-      .channel('dashboard-salaries')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'salaries' }, fetchDashboardData)
-      .subscribe();
-
     const feeFoldersChannel = supabase
       .channel('dashboard-fee-folders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_folders' }, fetchDashboardData)
@@ -80,7 +73,6 @@ const Dashboard = () => {
       supabase.removeChannel(expensesChannel);
       supabase.removeChannel(studentsChannel);
       supabase.removeChannel(staffChannel);
-      supabase.removeChannel(salariesChannel);
       supabase.removeChannel(feeFoldersChannel);
     };
   }, []);
@@ -93,7 +85,6 @@ const Dashboard = () => {
         staffResponse,
         paymentsResponse,
         expensesResponse,
-        salariesResponse,
         recentPaymentsResponse,
         pendingFeesResponse
       ] = await Promise.all([
@@ -101,7 +92,6 @@ const Dashboard = () => {
         supabase.from('staff').select('id'),
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, expense_date'),
-        supabase.from('salaries').select('net_amount, payment_date'),
         supabase.from('payments').select(`
           id, amount, payment_date, payment_method,
           students!inner(name)
@@ -115,21 +105,28 @@ const Dashboard = () => {
       const staff = staffResponse.data || [];
       const paymentsData = paymentsResponse.data || [];
       const expensesData = expensesResponse.data || [];
-      const salariesData = salariesResponse.data || [];
 
       // Calculate financial metrics
       const totalStudents = students.length;
       const totalStaff = staff.length;
+      
+      // Total Income = sum of all payments (what students have actually paid)
       const totalIncome = paymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-      const totalExpensesAmount = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
-      const totalSalariesAmount = salariesData.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
-      const totalExpenses = totalExpensesAmount + totalSalariesAmount;
+      
+      // Total Expenses = sum of all expenses (includes auto-generated staff expenses)
+      const totalExpenses = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      
+      // Remaining Fees = sum of all remaining student fees
       const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
+      
+      // Net Profit = Income - Expenses
       const netProfit = totalIncome - totalExpenses;
+      
+      // Profit Margin = (Profit / Income) * 100
       const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
 
       // Calculate monthly data for the last 6 months
-      const monthlyData = calculateMonthlyData(paymentsData, expensesData, salariesData);
+      const monthlyData = calculateMonthlyData(paymentsData, expensesData);
 
       // Calculate payment methods distribution
       const paymentMethods = calculatePaymentMethodsData(paymentsData);
@@ -155,7 +152,6 @@ const Dashboard = () => {
         totalStaff,
         totalIncome,
         totalExpenses,
-        totalSalaries: 0, // Salaries are now integrated into expenses
         remainingFees,
         netProfit,
         profitMargin,
@@ -171,7 +167,7 @@ const Dashboard = () => {
     }
   };
 
-  const calculateMonthlyData = (payments: any[], expenses: any[], salaries: any[]) => {
+  const calculateMonthlyData = (payments: any[], expenses: any[]) => {
     const months = [];
     const today = new Date();
     
@@ -187,16 +183,11 @@ const Dashboard = () => {
       const monthlyExpenses = expenses
         .filter(e => e.expense_date.startsWith(yearMonth))
         .reduce((sum, e) => sum + Number(e.amount), 0);
-
-      const monthlySalaries = salaries
-        .filter(s => s.payment_date.startsWith(yearMonth))
-        .reduce((sum, s) => sum + Number(s.net_amount), 0);
       
       months.push({
         month: monthName,
         income: monthlyIncome,
         expenses: monthlyExpenses,
-        salaries: monthlySalaries,
       });
     }
     

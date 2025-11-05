@@ -11,8 +11,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, Wallet } from 'lucide-react';
+import { Plus, Edit, Trash2, Wallet, Download } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { downloadReceipt } from '@/lib/receiptGenerator';
 
 const paymentSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
@@ -22,7 +23,12 @@ const paymentSchema = z.object({
   currency: z.string().default('USD'),
 });
 
-type Payment = z.infer<typeof paymentSchema> & { id: string; students?: { name: string } };
+type Payment = z.infer<typeof paymentSchema> & { 
+  id: string; 
+  students?: { name: string }; 
+  receipt_number?: string;
+  description?: string;
+};
 
 const Payments = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -111,13 +117,14 @@ const Payments = () => {
 
   const onSubmit = async (data: z.infer<typeof paymentSchema>) => {
     try {
+      const receiptNumber = `PAY-${Date.now()}`;
       const payload = {
         student_id: data.student_id,
         amount: data.amount,
         payment_date: data.payment_date,
         payment_method: data.payment_method,
         currency: currency.code,
-        receipt_number: `PAY-${Date.now()}`,
+        receipt_number: receiptNumber,
       };
 
       if (editingPayment) {
@@ -135,6 +142,20 @@ const Payments = () => {
           .insert([payload]);
 
         if (paymentError) throw paymentError;
+
+        // Generate and download receipt
+        const student = students.find(s => s.id === data.student_id);
+        if (student) {
+          downloadReceipt({
+            receiptNumber,
+            studentName: student.name,
+            amount: data.amount,
+            paymentDate: data.payment_date,
+            paymentMethod: data.payment_method,
+            currency: currency.code,
+            description: `School Fee Payment`,
+          });
+        }
 
         // Update fee folder - find pending fee folders and update them
         const { data: feeFolders } = await supabase
@@ -192,6 +213,22 @@ const Payments = () => {
       currency: (payment as any).currency || 'USD',
     });
     setIsDialogOpen(true);
+  };
+
+  const handleDownloadReceipt = (payment: Payment) => {
+    const student = students.find(s => s.id === payment.student_id);
+    if (student) {
+      downloadReceipt({
+        receiptNumber: payment.receipt_number || `PAY-${payment.id.substring(0, 8)}`,
+        studentName: student.name,
+        amount: Number(payment.amount),
+        paymentDate: payment.payment_date,
+        paymentMethod: payment.payment_method,
+        currency: (payment as any).currency || 'USD',
+        description: payment.description || 'School Fee Payment',
+      });
+      toast({ title: 'Success', description: 'Receipt downloaded successfully' });
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -363,13 +400,14 @@ const Payments = () => {
                   <TableHead>Amount Paid</TableHead>
                   <TableHead>Method</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Receipt</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {payments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       No payments found
                     </TableCell>
                   </TableRow>
@@ -382,6 +420,17 @@ const Payments = () => {
                       <TableCell className="font-semibold text-primary">{formatAmount(Number(payment.amount))}</TableCell>
                       <TableCell className="capitalize">{payment.payment_method.replace('_', ' ')}</TableCell>
                       <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownloadReceipt(payment)}
+                          className="text-primary hover:text-primary"
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                      </TableCell>
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button
