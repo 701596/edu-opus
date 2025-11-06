@@ -118,6 +118,21 @@ const Payments = () => {
   const onSubmit = async (data: z.infer<typeof paymentSchema>) => {
     try {
       const receiptNumber = `PAY-${Date.now()}`;
+      
+      // Check for duplicate receipt number (only for new payments)
+      if (!editingPayment) {
+        const { data: existing } = await supabase
+          .from('payments')
+          .select('id')
+          .eq('receipt_number', receiptNumber)
+          .maybeSingle();
+        
+        if (existing) {
+          toast({ title: 'Error', description: 'A payment with this receipt number already exists', variant: 'destructive' });
+          return;
+        }
+      }
+      
       const payload = {
         student_id: data.student_id,
         amount: data.amount,

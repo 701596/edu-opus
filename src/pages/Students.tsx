@@ -107,10 +107,39 @@ const Students = () => {
       };
 
       if (editingStudent) {
+        // Check for duplicate email excluding current student
+        if (data.email) {
+          const { data: existing } = await supabase
+            .from('students')
+            .select('id')
+            .eq('email', data.email)
+            .neq('id', editingStudent.id)
+            .maybeSingle();
+          
+          if (existing) {
+            toast({ title: 'Error', description: 'A student with this email already exists in your account', variant: 'destructive' });
+            return;
+          }
+        }
+        
         const { error } = await supabase.from('students').update(payload).eq('id', editingStudent.id);
         if (error) throw error;
         toast({ title: 'Success', description: 'Student updated successfully' });
       } else {
+        // Check for duplicate email
+        if (data.email) {
+          const { data: existing } = await supabase
+            .from('students')
+            .select('id')
+            .eq('email', data.email)
+            .maybeSingle();
+          
+          if (existing) {
+            toast({ title: 'Error', description: 'A student with this email already exists in your account', variant: 'destructive' });
+            return;
+          }
+        }
+        
         const { data: newStudent, error } = await supabase
           .from('students')
           .insert([payload])
@@ -122,7 +151,7 @@ const Students = () => {
         // Auto-create fee folder for new student (handled by database trigger)
         toast({ 
           title: 'Success', 
-          description: 'Student added successfully. Fee folder created automatically.' 
+          description: 'Student added successfully. Fee folder created automatically.'
         });
       }
 

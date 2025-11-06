@@ -100,10 +100,39 @@ const Staff = () => {
       };
 
       if (editingStaff) {
+        // Check for duplicates excluding current staff
+        if (data.email) {
+          const { data: existing } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('email', data.email)
+            .neq('id', editingStaff.id)
+            .maybeSingle();
+          
+          if (existing) {
+            toast({ title: 'Error', description: 'A staff member with this email already exists in your account', variant: 'destructive' });
+            return;
+          }
+        }
+        
         const { error } = await supabase.from('staff').update(payload).eq('id', editingStaff.id);
         if (error) throw error;
         toast({ title: 'Success', description: 'Staff member updated successfully' });
       } else {
+        // Check for duplicate email
+        if (data.email) {
+          const { data: existing } = await supabase
+            .from('staff')
+            .select('id')
+            .eq('email', data.email)
+            .maybeSingle();
+          
+          if (existing) {
+            toast({ title: 'Error', description: 'A staff member with this email already exists in your account', variant: 'destructive' });
+            return;
+          }
+        }
+        
         const { error } = await supabase.from('staff').insert([payload]);
         if (error) throw error;
         toast({ title: 'Success', description: 'Staff member added successfully' });

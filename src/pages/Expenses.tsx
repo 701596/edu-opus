@@ -87,13 +87,14 @@ const Expenses = () => {
 
   const onSubmit = async (data: z.infer<typeof expenseSchema>) => {
     try {
+      const receiptNumber = `EXP-${Date.now()}`;
       const payload = {
         description: data.description,
         amount: data.amount,
         category: data.category,
         expense_date: data.expense_date,
         vendor: data.description,
-        receipt_number: `EXP-${Date.now()}`,
+        receipt_number: receiptNumber,
       };
 
       if (editingExpense) {
