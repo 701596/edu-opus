@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Users } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { StudentBatchImport } from '@/components/StudentBatchImport';
 
 const studentSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -220,7 +221,9 @@ const Students = () => {
           </div>
           <p className="text-muted-foreground">Manage student enrollment and information</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
+        <div className="flex gap-2">
+          <StudentBatchImport onImportComplete={fetchStudents} />
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
@@ -404,7 +407,8 @@ const Students = () => {
               </form>
             </Form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">

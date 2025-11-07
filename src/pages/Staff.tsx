@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Briefcase } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { StaffBatchImport } from '@/components/StaffBatchImport';
 
 const staffSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -201,7 +202,9 @@ const Staff = () => {
           </div>
           <p className="text-muted-foreground">Manage staff members and employees</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
+        <div className="flex gap-2">
+          <StaffBatchImport onImportComplete={fetchStaff} />
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
@@ -321,6 +324,7 @@ const Staff = () => {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
