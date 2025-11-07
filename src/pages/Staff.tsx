@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Briefcase } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { StaffBatchImport } from '@/components/StaffBatchImport';
+import { BulkEditStaff } from '@/components/BulkEditStaff';
 
 const staffSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -31,6 +32,10 @@ type Staff = z.infer<typeof staffSchema> & {
   id: string;
   created_at?: string;
   updated_at?: string;
+  name: string;
+  salary: number;
+  salary_type: string;
+  position: string;
 };
 
 const Staff = () => {
@@ -203,6 +208,7 @@ const Staff = () => {
           <p className="text-muted-foreground">Manage staff members and employees</p>
         </div>
         <div className="flex gap-2">
+          <BulkEditStaff staff={staff} onEditComplete={fetchStaff} />
           <StaffBatchImport onImportComplete={fetchStaff} />
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>

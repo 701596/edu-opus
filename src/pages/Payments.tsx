@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Wallet, Download } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { downloadReceipt } from '@/lib/receiptGenerator';
+import { PaymentBatchImport } from '@/components/PaymentBatchImport';
 
 const paymentSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
@@ -295,7 +296,9 @@ const Payments = () => {
           </div>
           <p className="text-muted-foreground">Track student fee payments</p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
+        <div className="flex gap-2">
+          <PaymentBatchImport onImportComplete={fetchPayments} />
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
               <Plus className="w-4 h-4 mr-2" />
@@ -400,6 +403,7 @@ const Payments = () => {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">

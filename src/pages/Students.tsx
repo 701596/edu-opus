@@ -12,9 +12,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, Users } from 'lucide-react';
+import { Plus, Edit, Trash2, GraduationCap } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { StudentBatchImport } from '@/components/StudentBatchImport';
+import { BulkEditStudents } from '@/components/BulkEditStudents';
 
 const studentSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -34,6 +35,9 @@ type Student = z.infer<typeof studentSchema> & {
   id: string;
   created_at?: string;
   updated_at?: string;
+  payment_status?: string;
+  total_fee?: number;
+  remaining_fee?: number;
 };
 
 const Students = () => {
@@ -214,7 +218,7 @@ const Students = () => {
       <div className="flex justify-between items-center">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <Users className="w-8 h-8 text-primary" />
+            <GraduationCap className="w-8 h-8 text-primary" />
             <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary-glow bg-clip-text text-transparent">
               Students
             </h1>
@@ -222,6 +226,7 @@ const Students = () => {
           <p className="text-muted-foreground">Manage student enrollment and information</p>
         </div>
         <div className="flex gap-2">
+          <BulkEditStudents students={students} onEditComplete={fetchStudents} />
           <StudentBatchImport onImportComplete={fetchStudents} />
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
           <DialogTrigger asChild>
