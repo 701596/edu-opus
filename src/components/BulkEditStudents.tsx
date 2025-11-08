@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 
 interface BulkEditStudent {
   id: string;
-  name: string;
-  fee_amount: number;
-  fee_type: string;
+  name?: string;
+  fee_amount?: number;
+  fee_type?: string;
   payment_status?: string;
   class?: string;
 }
