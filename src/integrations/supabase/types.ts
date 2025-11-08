@@ -56,6 +56,39 @@ export type Database = {
         }
         Relationships: []
       }
+      fee_calculation_audit: {
+        Row: {
+          actor_id: string | null
+          calculation_timestamp: string | null
+          changed_fields: Json | null
+          created_at: string | null
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+          student_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          calculation_timestamp?: string | null
+          changed_fields?: Json | null
+          created_at?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          student_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          calculation_timestamp?: string | null
+          changed_fields?: Json | null
+          created_at?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          student_id?: string
+        }
+        Relationships: []
+      }
       fee_folders: {
         Row: {
           amount_due: number
@@ -388,6 +421,7 @@ export type Database = {
           date_of_birth: string | null
           email: string | null
           enrollment_date: string
+          expected_fee: number | null
           fee_amount: number | null
           fee_type: string | null
           guardian_name: string | null
@@ -395,6 +429,7 @@ export type Database = {
           id: string
           join_date: string | null
           name: string
+          paid_fee: number | null
           payment_status: string | null
           phone: string | null
           remaining_fee: number | null
@@ -410,6 +445,7 @@ export type Database = {
           date_of_birth?: string | null
           email?: string | null
           enrollment_date?: string
+          expected_fee?: number | null
           fee_amount?: number | null
           fee_type?: string | null
           guardian_name?: string | null
@@ -417,6 +453,7 @@ export type Database = {
           id?: string
           join_date?: string | null
           name: string
+          paid_fee?: number | null
           payment_status?: string | null
           phone?: string | null
           remaining_fee?: number | null
@@ -432,6 +469,7 @@ export type Database = {
           date_of_birth?: string | null
           email?: string | null
           enrollment_date?: string
+          expected_fee?: number | null
           fee_amount?: number | null
           fee_type?: string | null
           guardian_name?: string | null
@@ -439,6 +477,7 @@ export type Database = {
           id?: string
           join_date?: string | null
           name?: string
+          paid_fee?: number | null
           payment_status?: string | null
           phone?: string | null
           remaining_fee?: number | null
@@ -454,6 +493,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_expected_fee: {
+        Args: {
+          p_as_of_date?: string
+          p_fee_amount: number
+          p_fee_type: string
+          p_join_date: string
+        }
+        Returns: number
+      }
       calculate_student_paid_fees: {
         Args: { student_uuid: string }
         Returns: number

@@ -94,7 +94,7 @@ const Reports = () => {
         supabase.from('expenses').select('amount, category, expense_date'),
         supabase.from('salaries').select('net_amount, payment_date'),
         supabase.from('fee_folders').select('amount_due, amount_paid, status'),
-        supabase.from('students').select('fee_amount')
+        supabase.from('students').select('expected_fee, remaining_fee, paid_fee')
       ]);
 
       const payments = paymentsResponse.data || [];
@@ -103,17 +103,17 @@ const Reports = () => {
       const feeFolders = feeFoldersResponse.data || [];
       const students = studentsResponse.data || [];
 
-      // Calculate financial metrics
-      const totalIncome = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      // Calculate financial metrics using authoritative DB fields
+      const totalIncome = students.reduce((sum, s) => sum + Number(s.paid_fee || 0), 0);
       const totalExpensesAmount = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const totalSalariesAmount = salariesData.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
       const totalExpenses = totalExpensesAmount + totalSalariesAmount;
       const totalSalaries = totalSalariesAmount;
       const totalFeeFolders = feeFolders.reduce((sum, folder) => sum + Number(folder.amount_due), 0);
-      const totalPotentialIncome = students.reduce((sum, s) => sum + Number(s.fee_amount || 0), 0);
-      const remainingFees = totalPotentialIncome - totalIncome;
+      const totalExpected = students.reduce((sum, s) => sum + Number(s.expected_fee || 0), 0);
+      const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
       const netProfit = totalIncome - totalExpenses;
-      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+      const profitMargin = totalExpenses > 0 ? (netProfit / totalExpenses) * 100 : (totalIncome > 0 ? 100 : 0);
 
       // Calculate monthly trends
       const monthlyTrends = calculateMonthlyTrends(payments, expenses, salariesData);

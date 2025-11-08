@@ -70,26 +70,21 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
       if (feeType) updates.fee_type = feeType;
       if (joinDate) updates.join_date = joinDate;
 
-      // Calculate total_fee if needed
-      if (feeAmount || feeType) {
-        const selectedStudentsList = students.filter(s => selectedStudents.has(s.id));
-        
-        for (const student of selectedStudentsList) {
-          const amount = feeAmount || student.fee_amount;
-          const type = feeType || student.fee_type;
-          const totalFee = type === 'monthly' ? amount * 12 : amount;
-          
-          const { error } = await supabase
-            .from('students')
-            .update({
-              ...updates,
-              total_fee: totalFee
-            })
-            .eq('id', student.id);
+      // Update all selected students
+      // The database triggers will automatically recalculate expected_fee, remaining_fee, and payment_status
+      const selectedStudentsList = Array.from(selectedStudents);
+      
+      for (const studentId of selectedStudentsList) {
+        const { error } = await supabase
+          .from('students')
+          .update(updates)
+          .eq('id', studentId);
 
-          if (error) throw error;
-        }
+        if (error) throw error;
       }
+
+      // Wait a moment for triggers to complete and real-time updates to propagate
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       setUpdating(false);
       setIsOpen(false);
@@ -97,12 +92,16 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
       setFeeAmount('');
       setFeeType('');
       setJoinDate('');
-      onEditComplete();
-
+      
       toast({
         title: 'Success',
-        description: `Updated ${selectedStudents.size} student(s) successfully`
+        description: `Updated ${selectedStudentsList.length} student(s). Fees recalculated automatically.`
       });
+
+      // Trigger refresh after a brief delay to ensure real-time updates have propagated
+      setTimeout(() => {
+        onEditComplete();
+      }, 300);
     } catch (error: any) {
       setUpdating(false);
       toast({
@@ -197,7 +196,7 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
               Cancel
             </Button>
             <Button onClick={handleBulkUpdate} disabled={updating}>
-              {updating ? 'Updating...' : `Update ${selectedStudents.size} Student(s)`}
+              {updating ? 'Recalculating fees...' : `Update ${selectedStudents.size} Student(s)`}
             </Button>
           </div>
         </div>

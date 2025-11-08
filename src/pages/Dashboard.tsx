@@ -88,7 +88,7 @@ const Dashboard = () => {
         recentPaymentsResponse,
         pendingFeesResponse
       ] = await Promise.all([
-        supabase.from('students').select('total_fee, remaining_fee'),
+        supabase.from('students').select('expected_fee, remaining_fee, paid_fee'),
         supabase.from('staff').select('id'),
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, expense_date'),
@@ -97,7 +97,7 @@ const Dashboard = () => {
           students!inner(name)
         `).order('payment_date', { ascending: false }).limit(5),
         supabase.from('students').select(`
-          id, name, remaining_fee
+          id, name, remaining_fee, expected_fee
         `).gt('remaining_fee', 0).order('remaining_fee', { ascending: false }).limit(5)
       ]);
 
@@ -106,24 +106,27 @@ const Dashboard = () => {
       const paymentsData = paymentsResponse.data || [];
       const expensesData = expensesResponse.data || [];
 
-      // Calculate financial metrics
+      // Calculate financial metrics using authoritative DB fields
       const totalStudents = students.length;
       const totalStaff = staff.length;
       
-      // Total Income = sum of all payments (what students have actually paid)
-      const totalIncome = paymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      // Total Income = sum of all paid_fee from students (authoritative)
+      const totalIncome = students.reduce((sum, s) => sum + Number(s.paid_fee || 0), 0);
       
-      // Total Expenses = sum of all expenses (includes auto-generated staff expenses)
+      // Total Expected = sum of all expected_fee from students (authoritative)
+      const totalExpected = students.reduce((sum, s) => sum + Number(s.expected_fee || 0), 0);
+      
+      // Total Expenses = sum of all expenses (includes salaries)
       const totalExpenses = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
       
-      // Remaining Fees = sum of all remaining student fees
+      // Remaining Fees = sum of all remaining_fee from students (authoritative)
       const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
       
       // Net Profit = Income - Expenses
       const netProfit = totalIncome - totalExpenses;
       
-      // Profit Margin = (Profit / Income) * 100
-      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+      // Profit Margin = (Profit / Expenses) * 100, handle divide-by-zero
+      const profitMargin = totalExpenses > 0 ? (netProfit / totalExpenses) * 100 : (totalIncome > 0 ? 100 : 0);
 
       // Calculate monthly data for the last 6 months
       const monthlyData = calculateMonthlyData(paymentsData, expensesData);
