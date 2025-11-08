@@ -21,6 +21,7 @@ const paymentSchema = z.object({
   amount: z.number().min(0, 'Amount must be positive'),
   payment_date: z.string().min(1, 'Payment date is required'),
   payment_method: z.string().min(1, 'Payment method is required'),
+  category: z.string().min(1, 'Category is required'),
   currency: z.string().default('USD'),
 });
 
@@ -47,6 +48,7 @@ const Payments = () => {
       amount: 0,
       payment_date: new Date().toISOString().split('T')[0],
       payment_method: 'cash',
+      category: 'school_fee',
       currency: 'USD',
     },
   });
@@ -139,6 +141,7 @@ const Payments = () => {
         amount: data.amount,
         payment_date: data.payment_date,
         payment_method: data.payment_method,
+        category: data.category,
         currency: currency.code,
         receipt_number: receiptNumber,
       };
@@ -207,6 +210,7 @@ const Payments = () => {
         amount: 0,
         payment_date: new Date().toISOString().split('T')[0],
         payment_method: 'cash',
+        category: 'school_fee',
         currency: currency.code,
       });
       fetchPayments();
@@ -226,6 +230,7 @@ const Payments = () => {
       amount: Number(payment.amount),
       payment_date: payment.payment_date,
       payment_method: payment.payment_method,
+      category: (payment as any).category || 'school_fee',
       currency: (payment as any).currency || 'USD',
     });
     setIsDialogOpen(true);
@@ -391,6 +396,34 @@ const Payments = () => {
                     </FormItem>
                   )}
                 />
+                <FormField
+                  control={form.control}
+                  name="category"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Category</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="school_fee">School Fee</SelectItem>
+                          <SelectItem value="transportation_fee">Transportation Fee</SelectItem>
+                          <SelectItem value="admission_fee">Admission Fee</SelectItem>
+                          <SelectItem value="tuition">Tuition</SelectItem>
+                          <SelectItem value="library">Library Fee</SelectItem>
+                          <SelectItem value="lab">Lab Fee</SelectItem>
+                          <SelectItem value="sports">Sports Fee</SelectItem>
+                          <SelectItem value="exam">Exam Fee</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <div className="flex justify-end space-x-2 pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     Cancel
@@ -417,6 +450,7 @@ const Payments = () => {
                 <TableRow>
                   <TableHead>Student</TableHead>
                   <TableHead>Amount Paid</TableHead>
+                  <TableHead>Category</TableHead>
                   <TableHead>Method</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Receipt</TableHead>
@@ -426,7 +460,7 @@ const Payments = () => {
               <TableBody>
                 {payments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No payments found
                     </TableCell>
                   </TableRow>
@@ -437,6 +471,9 @@ const Payments = () => {
                         {payment.students?.name || 'Unknown Student'}
                       </TableCell>
                       <TableCell className="font-semibold text-primary">{formatAmount(Number(payment.amount))}</TableCell>
+                      <TableCell className="capitalize">
+                        {((payment as any).category || 'school_fee').replace(/_/g, ' ')}
+                      </TableCell>
                       <TableCell className="capitalize">{payment.payment_method.replace('_', ' ')}</TableCell>
                       <TableCell>{new Date(payment.payment_date).toLocaleDateString()}</TableCell>
                       <TableCell>

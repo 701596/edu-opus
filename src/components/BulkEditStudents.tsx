@@ -16,6 +16,7 @@ interface BulkEditStudent {
   fee_type?: string;
   payment_status?: string;
   class?: string;
+  join_date?: string;
 }
 
 interface BulkEditStudentsProps {
@@ -29,6 +30,7 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
   const [updating, setUpdating] = useState(false);
   const [feeAmount, setFeeAmount] = useState<number | ''>('');
   const [feeType, setFeeType] = useState<string>('');
+  const [joinDate, setJoinDate] = useState<string>('');
   const { toast } = useToast();
 
   const handleSelectAll = (checked: boolean) => {
@@ -55,7 +57,7 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
       return;
     }
 
-    if (!feeAmount && !feeType) {
+    if (!feeAmount && !feeType && !joinDate) {
       toast({ title: 'Error', description: 'Please specify at least one field to update', variant: 'destructive' });
       return;
     }
@@ -66,6 +68,7 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
       const updates: any = {};
       if (feeAmount) updates.fee_amount = feeAmount;
       if (feeType) updates.fee_type = feeType;
+      if (joinDate) updates.join_date = joinDate;
 
       // Calculate total_fee if needed
       if (feeAmount || feeType) {
@@ -93,6 +96,7 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
       setSelectedStudents(new Set());
       setFeeAmount('');
       setFeeType('');
+      setJoinDate('');
       onEditComplete();
 
       toast({
@@ -174,6 +178,16 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
                     <SelectItem value="annually">Annually</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bulk-join-date">Joining Date</Label>
+                <Input
+                  id="bulk-join-date"
+                  type="date"
+                  placeholder="Leave empty to keep current"
+                  value={joinDate}
+                  onChange={(e) => setJoinDate(e.target.value)}
+                />
               </div>
             </div>
           </div>
