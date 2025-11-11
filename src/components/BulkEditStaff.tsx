@@ -73,6 +73,14 @@ export const BulkEditStaff = ({ staff, onEditComplete }: BulkEditStaffProps) => 
 
       if (error) throw error;
 
+      toast({
+        title: 'Success',
+        description: 'Recalculating salary expenses...',
+      });
+      
+      // Brief delay to allow triggers to complete and realtime to propagate
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
       setUpdating(false);
       setIsOpen(false);
       setSelectedStaff(new Set());
@@ -81,8 +89,8 @@ export const BulkEditStaff = ({ staff, onEditComplete }: BulkEditStaffProps) => 
       onEditComplete();
 
       toast({
-        title: 'Success',
-        description: `Updated ${selectedStaff.size} staff member(s) successfully`
+        title: 'Complete',
+        description: `Successfully updated ${selectedStaff.size} staff member(s) with recalculated expenses`
       });
     } catch (error: any) {
       setUpdating(false);

@@ -89,7 +89,7 @@ const Dashboard = () => {
         pendingFeesResponse
       ] = await Promise.all([
         supabase.from('students').select('expected_fee, remaining_fee, paid_fee'),
-        supabase.from('staff').select('id'),
+        supabase.from('staff').select('id, expected_salary_expense, paid_salary'),
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, expense_date'),
         supabase.from('payments').select(`
@@ -118,6 +118,12 @@ const Dashboard = () => {
       
       // Total Expenses = sum of all expenses (includes salaries)
       const totalExpenses = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      
+      // Total Expected Salary Expense from staff (authoritative)
+      const totalExpectedSalaryExpense = staff.reduce((sum, s) => sum + Number((s as any).expected_salary_expense || 0), 0);
+      
+      // Total Paid Salary from staff (authoritative)
+      const totalPaidSalary = staff.reduce((sum, s) => sum + Number((s as any).paid_salary || 0), 0);
       
       // Remaining Fees = sum of all remaining_fee from students (authoritative)
       const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
@@ -162,7 +168,9 @@ const Dashboard = () => {
         paymentMethods,
         recentPayments,
         pendingFees,
-      });
+        totalExpectedSalaryExpense,
+        totalPaidSalary,
+      } as any);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -279,7 +287,7 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalExpenses)}</div>
-            <p className="text-xs text-muted-foreground">Operational costs</p>
+            <p className="text-xs text-muted-foreground">Expected staff salaries: {formatAmount((stats as any).totalExpectedSalaryExpense || 0)}</p>
           </CardContent>
         </Card>
       </div>

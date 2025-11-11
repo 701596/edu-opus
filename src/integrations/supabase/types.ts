@@ -362,10 +362,12 @@ export type Database = {
           created_at: string
           department: string | null
           email: string | null
+          expected_salary_expense: number | null
           hire_date: string
           id: string
           join_date: string | null
           name: string
+          paid_salary: number | null
           phone: string
           position: string
           role: string | null
@@ -380,10 +382,12 @@ export type Database = {
           created_at?: string
           department?: string | null
           email?: string | null
+          expected_salary_expense?: number | null
           hire_date: string
           id?: string
           join_date?: string | null
           name: string
+          paid_salary?: number | null
           phone: string
           position: string
           role?: string | null
@@ -398,10 +402,12 @@ export type Database = {
           created_at?: string
           department?: string | null
           email?: string | null
+          expected_salary_expense?: number | null
           hire_date?: string
           id?: string
           join_date?: string | null
           name?: string
+          paid_salary?: number | null
           phone?: string
           position?: string
           role?: string | null
@@ -410,6 +416,39 @@ export type Database = {
           staff_id?: string
           updated_at?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      staff_salary_audit: {
+        Row: {
+          actor_id: string | null
+          calculation_timestamp: string | null
+          changed_fields: Json | null
+          created_at: string | null
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+          staff_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          calculation_timestamp?: string | null
+          changed_fields?: Json | null
+          created_at?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          staff_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          calculation_timestamp?: string | null
+          changed_fields?: Json | null
+          created_at?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          staff_id?: string
         }
         Relationships: []
       }
@@ -499,6 +538,15 @@ export type Database = {
           p_fee_amount: number
           p_fee_type: string
           p_join_date: string
+        }
+        Returns: number
+      }
+      calculate_expected_staff_expense: {
+        Args: {
+          p_as_of_date?: string
+          p_join_date: string
+          p_salary: number
+          p_salary_type: string
         }
         Returns: number
       }

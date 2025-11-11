@@ -88,13 +88,15 @@ const Reports = () => {
         expensesResponse,
         salariesResponse,
         feeFoldersResponse,
-        studentsResponse
+        studentsResponse,
+        staffResponse
       ] = await Promise.all([
         supabase.from('payments').select('amount, payment_method, payment_date'),
         supabase.from('expenses').select('amount, category, expense_date'),
         supabase.from('salaries').select('net_amount, payment_date'),
         supabase.from('fee_folders').select('amount_due, amount_paid, status'),
-        supabase.from('students').select('expected_fee, remaining_fee, paid_fee')
+        supabase.from('students').select('expected_fee, remaining_fee, paid_fee'),
+        supabase.from('staff').select('expected_salary_expense, paid_salary')
       ]);
 
       const payments = paymentsResponse.data || [];
@@ -102,6 +104,7 @@ const Reports = () => {
       const salariesData = salariesResponse.data || [];
       const feeFolders = feeFoldersResponse.data || [];
       const students = studentsResponse.data || [];
+      const staff = staffResponse.data || [];
 
       // Calculate financial metrics using authoritative DB fields
       const totalIncome = students.reduce((sum, s) => sum + Number(s.paid_fee || 0), 0);
@@ -109,6 +112,8 @@ const Reports = () => {
       const totalSalariesAmount = salariesData.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
       const totalExpenses = totalExpensesAmount + totalSalariesAmount;
       const totalSalaries = totalSalariesAmount;
+      const totalExpectedSalaryExpense = staff.reduce((sum, s) => sum + Number((s as any).expected_salary_expense || 0), 0);
+      const totalPaidSalary = staff.reduce((sum, s) => sum + Number((s as any).paid_salary || 0), 0);
       const totalFeeFolders = feeFolders.reduce((sum, folder) => sum + Number(folder.amount_due), 0);
       const totalExpected = students.reduce((sum, s) => sum + Number(s.expected_fee || 0), 0);
       const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
@@ -135,7 +140,9 @@ const Reports = () => {
         monthlyTrends,
         categoryExpenses,
         paymentMethods,
-      });
+        totalExpectedSalaryExpense,
+        totalPaidSalary,
+      } as any);
     } catch (error) {
       console.error('Error fetching report data:', error);
     } finally {
@@ -246,7 +253,9 @@ const Reports = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalExpenses)}</div>
-            <p className="text-xs text-muted-foreground">Operational costs</p>
+            <p className="text-xs text-muted-foreground">
+              Expected staff salaries: {formatAmount((reportData as any).totalExpectedSalaryExpense || 0)}
+            </p>
           </CardContent>
         </Card>
 
