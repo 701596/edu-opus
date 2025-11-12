@@ -4,11 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, Download, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, Download, AlertCircle, CheckCircle2, Edit, Save } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface ImportResult {
   success: number;
@@ -16,11 +20,43 @@ interface ImportResult {
   errors: string[];
 }
 
+interface StudentRow {
+  name: string;
+  class: string;
+  fee_amount: number;
+  fee_type: string;
+  guardian_name: string;
+  guardian_phone: string;
+  join_date: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  date_of_birth?: string;
+}
+
+interface OptionalFields {
+  email: boolean;
+  phone: boolean;
+  address: boolean;
+  date_of_birth: boolean;
+  guardian_phone: boolean;
+}
+
 export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [progress, setProgress] = useState(0);
+  const [parsedData, setParsedData] = useState<StudentRow[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editedRow, setEditedRow] = useState<StudentRow | null>(null);
+  const [optionalFields, setOptionalFields] = useState<OptionalFields>({
+    email: true,
+    phone: true,
+    address: true,
+    date_of_birth: true,
+    guardian_phone: false,
+  });
   const { toast } = useToast();
 
   const downloadTemplate = () => {
@@ -64,13 +100,16 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
     if (!row.guardian_name || row.guardian_name.trim().length < 2) {
       return { valid: false, error: 'Guardian name is required' };
     }
-    if (!row.guardian_phone || row.guardian_phone.trim().length < 10) {
+    if (!optionalFields.guardian_phone && (!row.guardian_phone || row.guardian_phone.trim().length < 10)) {
       return { valid: false, error: 'Guardian phone is required (min 10 characters)' };
     }
     if (!row.join_date) {
       return { valid: false, error: 'Joining date is required' };
     }
-    if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+    if (!optionalFields.email && row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+      return { valid: false, error: 'Invalid email format' };
+    }
+    if (row.email && row.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
       return { valid: false, error: 'Invalid email format' };
     }
     return { valid: true };
@@ -94,7 +133,8 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
           skipEmptyLines: true,
           complete: async (results) => {
             parsedData = results.data;
-            await processImport(parsedData);
+            setParsedData(parsedData);
+            setImporting(false);
           },
           error: (error) => {
             toast({ title: 'Error', description: `CSV parsing error: ${error.message}`, variant: 'destructive' });
@@ -106,7 +146,8 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
         const workbook = XLSX.read(data);
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         parsedData = XLSX.utils.sheet_to_json(firstSheet);
-        await processImport(parsedData);
+        setParsedData(parsedData);
+        setImporting(false);
       } else {
         toast({ title: 'Error', description: 'Please upload a CSV or Excel file', variant: 'destructive' });
         setImporting(false);
@@ -191,6 +232,36 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
     setIsOpen(false);
     setResult(null);
     setProgress(0);
+    setParsedData([]);
+    setEditingIndex(null);
+    setEditedRow(null);
+  };
+
+  const handleEditRow = (index: number) => {
+    setEditingIndex(index);
+    setEditedRow({ ...parsedData[index] });
+  };
+
+  const handleSaveRow = () => {
+    if (editingIndex !== null && editedRow) {
+      const updated = [...parsedData];
+      updated[editingIndex] = editedRow;
+      setParsedData(updated);
+      setEditingIndex(null);
+      setEditedRow(null);
+      toast({ title: 'Success', description: 'Row updated successfully' });
+    }
+  };
+
+  const handleBulkEdit = (field: keyof StudentRow, value: any) => {
+    const updated = parsedData.map(row => ({ ...row, [field]: value }));
+    setParsedData(updated);
+    toast({ title: 'Success', description: `Bulk updated ${field} for all rows` });
+  };
+
+  const handleConfirmImport = async () => {
+    setImporting(true);
+    await processImport(parsedData);
   };
 
   return (
@@ -201,78 +272,277 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
           Import Students
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Batch Import Students</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Upload a CSV or Excel file with student data. Download the template below to see the required format.
-            </AlertDescription>
-          </Alert>
+        <Tabs defaultValue="upload" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="upload">Upload File</TabsTrigger>
+            <TabsTrigger value="optional" disabled={parsedData.length === 0}>Make Optional</TabsTrigger>
+            <TabsTrigger value="edit" disabled={parsedData.length === 0}>Edit Records</TabsTrigger>
+          </TabsList>
 
-          <Button onClick={downloadTemplate} variant="outline" className="w-full gap-2">
-            <Download className="w-4 h-4" />
-            Download Template
-          </Button>
+          <TabsContent value="upload" className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Upload a CSV or Excel file with student data. Download the template below to see the required format.
+              </AlertDescription>
+            </Alert>
 
-          <div className="border-2 border-dashed rounded-lg p-6 text-center">
-            <Input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={handleFileUpload}
-              disabled={importing}
-              className="cursor-pointer"
-            />
-            <p className="text-sm text-muted-foreground mt-2">
-              Supported formats: CSV, Excel (.xlsx, .xls)
-            </p>
-          </div>
+            <Button onClick={downloadTemplate} variant="outline" className="w-full gap-2">
+              <Download className="w-4 h-4" />
+              Download Template
+            </Button>
 
-          {importing && (
-            <div className="space-y-2">
-              <Progress value={progress} />
-              <p className="text-sm text-center text-muted-foreground">
-                Importing... {progress}%
+            <div className="border-2 border-dashed rounded-lg p-6 text-center">
+              <Input
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileUpload}
+                disabled={importing}
+                className="cursor-pointer"
+              />
+              <p className="text-sm text-muted-foreground mt-2">
+                Supported formats: CSV, Excel (.xlsx, .xls)
               </p>
             </div>
-          )}
 
-          {result && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <Alert className="border-green-500/50">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <AlertDescription>
-                    <div className="font-semibold">Success: {result.success}</div>
-                  </AlertDescription>
-                </Alert>
-                <Alert className="border-destructive/50">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <AlertDescription>
-                    <div className="font-semibold">Failed: {result.failed}</div>
-                  </AlertDescription>
-                </Alert>
+            {parsedData.length > 0 && !importing && (
+              <Alert className="border-green-500/50">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <AlertDescription>
+                  <div className="font-semibold">{parsedData.length} records parsed successfully!</div>
+                  <p className="text-sm mt-1">Go to "Make Optional" to configure field requirements, or "Edit Records" to review and modify data before importing.</p>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {importing && (
+              <div className="space-y-2">
+                <Progress value={progress} />
+                <p className="text-sm text-center text-muted-foreground">
+                  Importing... {progress}%
+                </p>
               </div>
+            )}
 
-              {result.errors.length > 0 && (
-                <div className="max-h-48 overflow-y-auto space-y-1">
-                  <p className="font-semibold text-sm">Errors:</p>
-                  {result.errors.map((error, idx) => (
-                    <p key={idx} className="text-xs text-destructive">{error}</p>
-                  ))}
+            {result && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <Alert className="border-green-500/50">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <AlertDescription>
+                      <div className="font-semibold">Success: {result.success}</div>
+                    </AlertDescription>
+                  </Alert>
+                  <Alert className="border-destructive/50">
+                    <AlertCircle className="h-4 w-4 text-destructive" />
+                    <AlertDescription>
+                      <div className="font-semibold">Failed: {result.failed}</div>
+                    </AlertDescription>
+                  </Alert>
                 </div>
-              )}
 
-              <Button onClick={handleClose} className="w-full">
-                Close
-              </Button>
+                {result.errors.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    <p className="font-semibold text-sm">Errors:</p>
+                    {result.errors.map((error, idx) => (
+                      <p key={idx} className="text-xs text-destructive">{error}</p>
+                    ))}
+                  </div>
+                )}
+
+                <Button onClick={handleClose} className="w-full">
+                  Close
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="optional" className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Mark fields as optional to allow missing values during import. Unchecked fields will be required.
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-3 border rounded-lg p-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="email-opt" 
+                  checked={optionalFields.email}
+                  onCheckedChange={(checked) => setOptionalFields(prev => ({ ...prev, email: checked as boolean }))}
+                />
+                <Label htmlFor="email-opt" className="cursor-pointer">Email (optional)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="phone-opt" 
+                  checked={optionalFields.phone}
+                  onCheckedChange={(checked) => setOptionalFields(prev => ({ ...prev, phone: checked as boolean }))}
+                />
+                <Label htmlFor="phone-opt" className="cursor-pointer">Phone (optional)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="address-opt" 
+                  checked={optionalFields.address}
+                  onCheckedChange={(checked) => setOptionalFields(prev => ({ ...prev, address: checked as boolean }))}
+                />
+                <Label htmlFor="address-opt" className="cursor-pointer">Address (optional)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="dob-opt" 
+                  checked={optionalFields.date_of_birth}
+                  onCheckedChange={(checked) => setOptionalFields(prev => ({ ...prev, date_of_birth: checked as boolean }))}
+                />
+                <Label htmlFor="dob-opt" className="cursor-pointer">Date of Birth (optional)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="guardian-phone-opt" 
+                  checked={optionalFields.guardian_phone}
+                  onCheckedChange={(checked) => setOptionalFields(prev => ({ ...prev, guardian_phone: checked as boolean }))}
+                />
+                <Label htmlFor="guardian-phone-opt" className="cursor-pointer">Guardian Phone (optional)</Label>
+              </div>
             </div>
-          )}
-        </div>
+
+            <Button onClick={handleConfirmImport} className="w-full" disabled={importing}>
+              {importing ? 'Importing...' : `Confirm Import (${parsedData.length} records)`}
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="edit" className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Review and edit records before importing. Click edit icon for single edit, or use bulk edit controls.
+              </AlertDescription>
+            </Alert>
+
+            <div className="border rounded-lg overflow-hidden">
+              <div className="max-h-96 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">#</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Class</TableHead>
+                      <TableHead>Fee Amount</TableHead>
+                      <TableHead>Fee Type</TableHead>
+                      <TableHead>Join Date</TableHead>
+                      <TableHead className="w-16">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {parsedData.map((row, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell>{idx + 1}</TableCell>
+                        <TableCell>
+                          {editingIndex === idx ? (
+                            <Input 
+                              value={editedRow?.name || ''} 
+                              onChange={(e) => setEditedRow(prev => prev ? { ...prev, name: e.target.value } : null)}
+                              className="w-full"
+                            />
+                          ) : row.name}
+                        </TableCell>
+                        <TableCell>
+                          {editingIndex === idx ? (
+                            <Input 
+                              value={editedRow?.class || ''} 
+                              onChange={(e) => setEditedRow(prev => prev ? { ...prev, class: e.target.value } : null)}
+                              className="w-full"
+                            />
+                          ) : row.class}
+                        </TableCell>
+                        <TableCell>
+                          {editingIndex === idx ? (
+                            <Input 
+                              type="number"
+                              value={editedRow?.fee_amount || ''} 
+                              onChange={(e) => setEditedRow(prev => prev ? { ...prev, fee_amount: Number(e.target.value) } : null)}
+                              className="w-full"
+                            />
+                          ) : row.fee_amount}
+                        </TableCell>
+                        <TableCell>
+                          {editingIndex === idx ? (
+                            <select 
+                              value={editedRow?.fee_type || 'monthly'} 
+                              onChange={(e) => setEditedRow(prev => prev ? { ...prev, fee_type: e.target.value } : null)}
+                              className="w-full border rounded px-2 py-1"
+                            >
+                              <option value="monthly">monthly</option>
+                              <option value="annually">annually</option>
+                            </select>
+                          ) : row.fee_type}
+                        </TableCell>
+                        <TableCell>
+                          {editingIndex === idx ? (
+                            <Input 
+                              type="date"
+                              value={editedRow?.join_date || ''} 
+                              onChange={(e) => setEditedRow(prev => prev ? { ...prev, join_date: e.target.value } : null)}
+                              className="w-full"
+                            />
+                          ) : row.join_date}
+                        </TableCell>
+                        <TableCell>
+                          {editingIndex === idx ? (
+                            <Button size="sm" onClick={handleSaveRow}>
+                              <Save className="w-4 h-4" />
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="ghost" onClick={() => handleEditRow(idx)}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            <div className="border rounded-lg p-4 space-y-2">
+              <p className="font-semibold text-sm">Bulk Edit Controls</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    const value = prompt('Enter fee type (monthly/annually):');
+                    if (value) handleBulkEdit('fee_type', value);
+                  }}
+                >
+                  Bulk Set Fee Type
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    const value = prompt('Enter class:');
+                    if (value) handleBulkEdit('class', value);
+                  }}
+                >
+                  Bulk Set Class
+                </Button>
+              </div>
+            </div>
+
+            <Button onClick={handleConfirmImport} className="w-full" disabled={importing}>
+              {importing ? 'Importing...' : `Confirm Import (${parsedData.length} records)`}
+            </Button>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
