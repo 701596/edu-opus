@@ -13,6 +13,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, CreditCard, FolderOpen } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 
 const feeFolderSchema = z.object({
@@ -37,6 +38,7 @@ const RemainingFees = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingFeeFolder, setEditingFeeFolder] = useState<FeeFolder | null>(null);
+  const [selectedFeeFolders, setSelectedFeeFolders] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
 
@@ -190,6 +192,58 @@ const RemainingFees = () => {
       due_date: feeFolder.due_date || '',
     });
     setIsDialogOpen(true);
+  };
+
+  const deleteFeeFolder = async (id: string) => {
+    try {
+      const { error } = await supabase.from('fee_folders').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Fee folder deleted successfully' });
+      fetchFeeFolders();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedFeeFolders.size === 0) {
+      toast({ title: 'No Selection', description: 'Please select fee folders to delete', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedFeeFolders.size} fee folder(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('fee_folders')
+        .delete()
+        .in('id', Array.from(selectedFeeFolders));
+
+      if (error) throw error;
+      toast({ title: 'Success', description: `Deleted ${selectedFeeFolders.size} fee folder(s) successfully` });
+      setSelectedFeeFolders(new Set());
+      fetchFeeFolders();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const toggleFeeFolderSelection = (id: string) => {
+    const newSelection = new Set(selectedFeeFolders);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    setSelectedFeeFolders(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedFeeFolders.size === feeFolders.length) {
+      setSelectedFeeFolders(new Set());
+    } else {
+      setSelectedFeeFolders(new Set(feeFolders.map(f => f.id)));
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -424,13 +478,32 @@ const RemainingFees = () => {
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
-          <CardTitle>Fee Folders</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Fee Folders</CardTitle>
+            {selectedFeeFolders.size > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete ({selectedFeeFolders.size})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox 
+                      checked={selectedFeeFolders.size === feeFolders.length && feeFolders.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Student</TableHead>
                   <TableHead>Folder</TableHead>
                   <TableHead>Category</TableHead>
@@ -445,13 +518,19 @@ const RemainingFees = () => {
               <TableBody>
                 {feeFolders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
                       No fee folders found
                     </TableCell>
                   </TableRow>
                 ) : (
                   feeFolders.map((folder) => (
                     <TableRow key={folder.id}>
+                      <TableCell>
+                        <Checkbox 
+                          checked={selectedFeeFolders.has(folder.id)}
+                          onCheckedChange={() => toggleFeeFolderSelection(folder.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         {folder.students?.name || 'Unknown Student'}
                       </TableCell>

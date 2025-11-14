@@ -13,6 +13,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, GraduationCap } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { StudentBatchImport } from '@/components/StudentBatchImport';
 import { BulkEditStudents } from '@/components/BulkEditStudents';
@@ -45,6 +46,7 @@ const Students = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
 
@@ -165,6 +167,58 @@ const Students = () => {
       form.reset();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'An error occurred', variant: 'destructive' });
+    }
+  };
+
+  const deleteStudent = async (id: string) => {
+    try {
+      const { error } = await supabase.from('students').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Student deleted successfully' });
+      fetchStudents();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedStudents.size === 0) {
+      toast({ title: 'No Selection', description: 'Please select students to delete', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedStudents.size} student(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('students')
+        .delete()
+        .in('id', Array.from(selectedStudents));
+
+      if (error) throw error;
+      toast({ title: 'Success', description: `Deleted ${selectedStudents.size} student(s) successfully` });
+      setSelectedStudents(new Set());
+      fetchStudents();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const toggleStudentSelection = (id: string) => {
+    const newSelection = new Set(selectedStudents);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    setSelectedStudents(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedStudents.size === students.length) {
+      setSelectedStudents(new Set());
+    } else {
+      setSelectedStudents(new Set(students.map(s => s.id)));
     }
   };
 
@@ -418,13 +472,32 @@ const Students = () => {
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
-          <CardTitle>Students List</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Students List</CardTitle>
+            {selectedStudents.size > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete ({selectedStudents.size})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox 
+                      checked={selectedStudents.size === students.length && students.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Guardian</TableHead>
@@ -437,13 +510,19 @@ const Students = () => {
               <TableBody>
                 {students.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       No students found
                     </TableCell>
                   </TableRow>
                 ) : (
                   students.map((student) => (
                     <TableRow key={student.id}>
+                      <TableCell>
+                        <Checkbox 
+                          checked={selectedStudents.has(student.id)}
+                          onCheckedChange={() => toggleStudentSelection(student.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{student.name}</TableCell>
                       <TableCell>{student.class || '-'}</TableCell>
                       <TableCell>{student.guardian_name || '-'}</TableCell>

@@ -12,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Wallet, Download } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { downloadReceipt } from '@/lib/receiptGenerator';
 import { PaymentBatchImport } from '@/components/PaymentBatchImport';
@@ -38,6 +39,7 @@ const Payments = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { formatAmount, currency } = useCurrency();
 
@@ -220,6 +222,58 @@ const Payments = () => {
         description: error.message || 'An error occurred',
         variant: 'destructive',
       });
+    }
+  };
+
+  const deletePayment = async (id: string) => {
+    try {
+      const { error } = await supabase.from('payments').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Payment deleted successfully' });
+      fetchPayments();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedPayments.size === 0) {
+      toast({ title: 'No Selection', description: 'Please select payments to delete', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedPayments.size} payment(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('payments')
+        .delete()
+        .in('id', Array.from(selectedPayments));
+
+      if (error) throw error;
+      toast({ title: 'Success', description: `Deleted ${selectedPayments.size} payment(s) successfully` });
+      setSelectedPayments(new Set());
+      fetchPayments();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const togglePaymentSelection = (id: string) => {
+    const newSelection = new Set(selectedPayments);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    setSelectedPayments(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedPayments.size === payments.length) {
+      setSelectedPayments(new Set());
+    } else {
+      setSelectedPayments(new Set(payments.map(p => p.id)));
     }
   };
 
@@ -441,13 +495,32 @@ const Payments = () => {
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
-          <CardTitle>Payments List</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Payments List</CardTitle>
+            {selectedPayments.size > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete ({selectedPayments.size})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox 
+                      checked={selectedPayments.size === payments.length && payments.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Student</TableHead>
                   <TableHead>Amount Paid</TableHead>
                   <TableHead>Category</TableHead>
@@ -460,13 +533,19 @@ const Payments = () => {
               <TableBody>
                 {payments.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                       No payments found
                     </TableCell>
                   </TableRow>
                 ) : (
                   payments.map((payment) => (
                     <TableRow key={payment.id}>
+                      <TableCell>
+                        <Checkbox 
+                          checked={selectedPayments.has(payment.id)}
+                          onCheckedChange={() => togglePaymentSelection(payment.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         {payment.students?.name || 'Unknown Student'}
                       </TableCell>
