@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, Download, AlertCircle, CheckCircle2, Edit, Save } from 'lucide-react';
+import { Upload, Download, AlertCircle, CheckCircle2, Edit, Save, Trash2 } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -13,6 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 
 interface ImportResult {
   success: number;
@@ -42,6 +43,17 @@ interface OptionalFields {
   guardian_phone: boolean;
 }
 
+interface DuplicateMatch {
+  rowIndex: number;
+  existingStudent: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+  };
+  matchReason: string;
+}
+
 export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -57,6 +69,9 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
     date_of_birth: true,
     guardian_phone: false,
   });
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const { toast } = useToast();
 
   const downloadTemplate = () => {
@@ -115,6 +130,68 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
     return { valid: true };
   };
 
+  const checkDuplicates = async (data: StudentRow[]) => {
+    setCheckingDuplicates(true);
+    const foundDuplicates: DuplicateMatch[] = [];
+
+    try {
+      const { data: existingStudents } = await supabase
+        .from('students')
+        .select('id, name, email, phone')
+        .eq('user_id', (await supabase.auth.getUser()).data.user?.id);
+
+      if (!existingStudents) {
+        setCheckingDuplicates(false);
+        return;
+      }
+
+      data.forEach((row, idx) => {
+        existingStudents.forEach(existing => {
+          // Exact email match
+          if (row.email && existing.email && row.email.toLowerCase() === existing.email.toLowerCase()) {
+            foundDuplicates.push({
+              rowIndex: idx,
+              existingStudent: existing,
+              matchReason: 'Email match'
+            });
+          }
+          // Exact phone match
+          else if (row.phone && existing.phone && row.phone === existing.phone) {
+            foundDuplicates.push({
+              rowIndex: idx,
+              existingStudent: existing,
+              matchReason: 'Phone match'
+            });
+          }
+          // Name similarity (case-insensitive exact match or very similar)
+          else if (row.name && existing.name) {
+            const rowName = row.name.toLowerCase().trim();
+            const existingName = existing.name.toLowerCase().trim();
+            if (rowName === existingName) {
+              foundDuplicates.push({
+                rowIndex: idx,
+                existingStudent: existing,
+                matchReason: 'Name match'
+              });
+            }
+          }
+        });
+      });
+
+      setDuplicates(foundDuplicates);
+      if (foundDuplicates.length > 0) {
+        toast({ 
+          title: 'Duplicates Found', 
+          description: `Found ${foundDuplicates.length} potential duplicate(s). Review them in the Duplicates tab.`,
+          variant: 'destructive'
+        });
+      }
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+    setCheckingDuplicates(false);
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -122,6 +199,8 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
     setImporting(true);
     setResult(null);
     setProgress(0);
+    setDuplicates([]);
+    setSelectedRows(new Set());
 
     try {
       const fileExtension = file.name.split('.').pop()?.toLowerCase();
@@ -134,6 +213,7 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
           complete: async (results) => {
             parsedData = results.data;
             setParsedData(parsedData);
+            await checkDuplicates(parsedData);
             setImporting(false);
           },
           error: (error) => {
@@ -147,6 +227,7 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         parsedData = XLSX.utils.sheet_to_json(firstSheet);
         setParsedData(parsedData);
+        await checkDuplicates(parsedData);
         setImporting(false);
       } else {
         toast({ title: 'Error', description: 'Please upload a CSV or Excel file', variant: 'destructive' });
@@ -235,6 +316,38 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
     setParsedData([]);
     setEditingIndex(null);
     setEditedRow(null);
+    setDuplicates([]);
+    setSelectedRows(new Set());
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedRows.size === 0) {
+      toast({ title: 'No Selection', description: 'Please select rows to delete', variant: 'destructive' });
+      return;
+    }
+    
+    const remaining = parsedData.filter((_, idx) => !selectedRows.has(idx));
+    setParsedData(remaining);
+    setSelectedRows(new Set());
+    toast({ title: 'Success', description: `Deleted ${selectedRows.size} row(s)` });
+  };
+
+  const toggleRowSelection = (index: number) => {
+    const newSelection = new Set(selectedRows);
+    if (newSelection.has(index)) {
+      newSelection.delete(index);
+    } else {
+      newSelection.add(index);
+    }
+    setSelectedRows(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedRows.size === parsedData.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(parsedData.map((_, idx) => idx)));
+    }
   };
 
   const handleEditRow = (index: number) => {
@@ -278,8 +391,11 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
         </DialogHeader>
 
         <Tabs defaultValue="upload" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="upload">Upload File</TabsTrigger>
+            <TabsTrigger value="duplicates" disabled={parsedData.length === 0}>
+              Duplicates {duplicates.length > 0 && <Badge variant="destructive" className="ml-1">{duplicates.length}</Badge>}
+            </TabsTrigger>
             <TabsTrigger value="optional" disabled={parsedData.length === 0}>Make Optional</TabsTrigger>
             <TabsTrigger value="edit" disabled={parsedData.length === 0}>Edit Records</TabsTrigger>
           </TabsList>
@@ -310,13 +426,25 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
               </p>
             </div>
 
-            {parsedData.length > 0 && !importing && (
+            {parsedData.length > 0 && !importing && !checkingDuplicates && (
               <Alert className="border-green-500/50">
                 <CheckCircle2 className="h-4 w-4 text-green-500" />
                 <AlertDescription>
                   <div className="font-semibold">{parsedData.length} records parsed successfully!</div>
-                  <p className="text-sm mt-1">Go to "Make Optional" to configure field requirements, or "Edit Records" to review and modify data before importing.</p>
+                  <p className="text-sm mt-1">
+                    {duplicates.length > 0 
+                      ? `⚠️ Found ${duplicates.length} potential duplicate(s). Check the "Duplicates" tab.`
+                      : 'Go to "Make Optional" to configure field requirements, or "Edit Records" to review and modify data before importing.'
+                    }
+                  </p>
                 </AlertDescription>
+              </Alert>
+            )}
+
+            {checkingDuplicates && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>Checking for duplicates...</AlertDescription>
               </Alert>
             )}
 
@@ -360,6 +488,80 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
                 </Button>
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="duplicates" className="space-y-4">
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                These records match existing students in your database. Review and decide whether to skip or proceed with import.
+              </AlertDescription>
+            </Alert>
+
+            {duplicates.length === 0 ? (
+              <Alert className="border-green-500/50">
+                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                <AlertDescription>No duplicates found! All records are unique.</AlertDescription>
+              </Alert>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="max-h-96 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">#</TableHead>
+                        <TableHead>Import Record</TableHead>
+                        <TableHead>Existing Student</TableHead>
+                        <TableHead>Match Reason</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {duplicates.map((dup, idx) => (
+                        <TableRow key={idx} className="bg-destructive/5">
+                          <TableCell>{dup.rowIndex + 1}</TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-semibold">{parsedData[dup.rowIndex].name}</div>
+                              {parsedData[dup.rowIndex].email && (
+                                <div className="text-xs text-muted-foreground">{parsedData[dup.rowIndex].email}</div>
+                              )}
+                              {parsedData[dup.rowIndex].phone && (
+                                <div className="text-xs text-muted-foreground">{parsedData[dup.rowIndex].phone}</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-semibold">{dup.existingStudent.name}</div>
+                              {dup.existingStudent.email && (
+                                <div className="text-xs text-muted-foreground">{dup.existingStudent.email}</div>
+                              )}
+                              {dup.existingStudent.phone && (
+                                <div className="text-xs text-muted-foreground">{dup.existingStudent.phone}</div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">{dup.matchReason}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleConfirmImport} 
+                className="flex-1" 
+                disabled={importing}
+                variant="default"
+              >
+                {importing ? 'Importing...' : 'Import All (Including Duplicates)'}
+              </Button>
+            </div>
           </TabsContent>
 
           <TabsContent value="optional" className="space-y-4">
@@ -422,15 +624,36 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Review and edit records before importing. Click edit icon for single edit, or use bulk edit controls.
+                Review and edit records before importing. Select rows to bulk delete, or click edit icon for single edit.
               </AlertDescription>
             </Alert>
+
+            {selectedRows.size > 0 && (
+              <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                <span className="text-sm font-medium">{selectedRows.size} row(s) selected</span>
+                <Button 
+                  size="sm" 
+                  variant="destructive" 
+                  onClick={handleBulkDelete}
+                  className="gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Selected
+                </Button>
+              </div>
+            )}
 
             <div className="border rounded-lg overflow-hidden">
               <div className="max-h-96 overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox 
+                          checked={selectedRows.size === parsedData.length && parsedData.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
                       <TableHead className="w-12">#</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead>Class</TableHead>
@@ -443,6 +666,12 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
                   <TableBody>
                     {parsedData.map((row, idx) => (
                       <TableRow key={idx}>
+                        <TableCell>
+                          <Checkbox 
+                            checked={selectedRows.has(idx)}
+                            onCheckedChange={() => toggleRowSelection(idx)}
+                          />
+                        </TableCell>
                         <TableCell>{idx + 1}</TableCell>
                         <TableCell>
                           {editingIndex === idx ? (
