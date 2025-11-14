@@ -11,6 +11,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Receipt } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { ExpenseBatchImport } from '@/components/ExpenseBatchImport';
 
@@ -28,6 +29,7 @@ const Expenses = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { formatAmount, currency } = useCurrency();
 
@@ -125,6 +127,58 @@ const Expenses = () => {
         description: error.message || 'An error occurred',
         variant: 'destructive',
       });
+    }
+  };
+
+  const deleteExpense = async (id: string) => {
+    try {
+      const { error } = await supabase.from('expenses').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Expense deleted successfully' });
+      fetchExpenses();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedExpenses.size === 0) {
+      toast({ title: 'No Selection', description: 'Please select expenses to delete', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedExpenses.size} expense(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .in('id', Array.from(selectedExpenses));
+
+      if (error) throw error;
+      toast({ title: 'Success', description: `Deleted ${selectedExpenses.size} expense(s) successfully` });
+      setSelectedExpenses(new Set());
+      fetchExpenses();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const toggleExpenseSelection = (id: string) => {
+    const newSelection = new Set(selectedExpenses);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    setSelectedExpenses(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedExpenses.size === expenses.length) {
+      setSelectedExpenses(new Set());
+    } else {
+      setSelectedExpenses(new Set(expenses.map(e => e.id)));
     }
   };
 
@@ -279,13 +333,32 @@ const Expenses = () => {
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
-          <CardTitle>Expenses List</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Expenses List</CardTitle>
+            {selectedExpenses.size > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete ({selectedExpenses.size})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox 
+                      checked={selectedExpenses.size === expenses.length && expenses.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Expense Name</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Amount</TableHead>
@@ -296,13 +369,19 @@ const Expenses = () => {
               <TableBody>
                 {expenses.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center text-muted-foreground">
                       No expenses found
                     </TableCell>
                   </TableRow>
                 ) : (
                   expenses.map((expense) => (
                     <TableRow key={expense.id}>
+                      <TableCell>
+                        <Checkbox 
+                          checked={selectedExpenses.has(expense.id)}
+                          onCheckedChange={() => toggleExpenseSelection(expense.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{expense.description}</TableCell>
                       <TableCell>{expense.category}</TableCell>
                       <TableCell className="font-semibold text-primary">{formatAmount(Number(expense.amount))}</TableCell>

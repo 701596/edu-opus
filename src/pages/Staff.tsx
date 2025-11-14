@@ -12,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Briefcase } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { StaffBatchImport } from '@/components/StaffBatchImport';
 import { BulkEditStaff } from '@/components/BulkEditStaff';
@@ -43,6 +44,7 @@ const Staff = () => {
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [selectedStaff, setSelectedStaff] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
 
@@ -166,6 +168,58 @@ const Staff = () => {
       department: staffMember.department || '',
     });
     setIsDialogOpen(true);
+  };
+
+  const deleteStaff = async (id: string) => {
+    try {
+      const { error } = await supabase.from('staff').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: 'Success', description: 'Staff member deleted successfully' });
+      fetchStaff();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedStaff.size === 0) {
+      toast({ title: 'No Selection', description: 'Please select staff to delete', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedStaff.size} staff member(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('staff')
+        .delete()
+        .in('id', Array.from(selectedStaff));
+
+      if (error) throw error;
+      toast({ title: 'Success', description: `Deleted ${selectedStaff.size} staff member(s) successfully` });
+      setSelectedStaff(new Set());
+      fetchStaff();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const toggleStaffSelection = (id: string) => {
+    const newSelection = new Set(selectedStaff);
+    if (newSelection.has(id)) {
+      newSelection.delete(id);
+    } else {
+      newSelection.add(id);
+    }
+    setSelectedStaff(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedStaff.size === staff.length) {
+      setSelectedStaff(new Set());
+    } else {
+      setSelectedStaff(new Set(staff.map(s => s.id)));
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -335,13 +389,32 @@ const Staff = () => {
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
-          <CardTitle>Staff List</CardTitle>
+          <div className="flex justify-between items-center">
+            <CardTitle>Staff List</CardTitle>
+            {selectedStaff.size > 0 && (
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleBulkDelete}
+                className="gap-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete ({selectedStaff.size})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <Checkbox 
+                      checked={selectedStaff.size === staff.length && staff.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Contact</TableHead>
@@ -353,13 +426,19 @@ const Staff = () => {
               <TableBody>
                 {staff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground">
                       No staff members found
                     </TableCell>
                   </TableRow>
                 ) : (
                   staff.map((staffMember) => (
                     <TableRow key={staffMember.id}>
+                      <TableCell>
+                        <Checkbox 
+                          checked={selectedStaff.has(staffMember.id)}
+                          onCheckedChange={() => toggleStaffSelection(staffMember.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{staffMember.name}</TableCell>
                       <TableCell>{staffMember.position}</TableCell>
                       <TableCell>{staffMember.phone || '-'}</TableCell>
