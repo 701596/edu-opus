@@ -17,6 +17,7 @@ import { useCurrency } from '@/contexts/CurrencyContext';
 import { downloadReceipt } from '@/lib/receiptGenerator';
 import { PaymentBatchImport } from '@/components/PaymentBatchImport';
 import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -44,6 +45,7 @@ type Payment = {
 };
 
 const Payments = () => {
+  const { user } = useAuth();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [students, setStudents] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,6 +199,7 @@ const Payments = () => {
   };
 
   const onSubmit = async (data: z.infer<typeof paymentSchema>) => {
+    if (!user) return;
     try {
       const receiptNumber = `PAY-${Date.now()}`;
 
@@ -222,6 +225,7 @@ const Payments = () => {
         category: data.category,
         currency: currency.code,
         receipt_number: receiptNumber,
+        user_id: user.id,
       };
 
       if (editingPayment) {

@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { ExpenseBatchImport } from '@/components/ExpenseBatchImport';
 import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -36,6 +37,7 @@ type Expense = {
 };
 
 const Expenses = () => {
+  const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -165,6 +167,7 @@ const Expenses = () => {
   };
 
   const onSubmit = async (data: z.infer<typeof expenseSchema>) => {
+    if (!user) return;
     try {
       const receiptNumber = `EXP-${Date.now()}`;
       const payload = {
@@ -174,6 +177,7 @@ const Expenses = () => {
         expense_date: data.expense_date,
         vendor: data.description,
         receipt_number: receiptNumber,
+        user_id: user.id,
       };
 
       if (editingExpense) {

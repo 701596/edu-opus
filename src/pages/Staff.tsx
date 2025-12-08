@@ -17,6 +17,7 @@ import { useCurrency } from '@/contexts/CurrencyContext';
 import { StaffBatchImport } from '@/components/StaffBatchImport';
 import { BulkEditStaff } from '@/components/BulkEditStaff';
 import { useSearchParams } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -43,6 +44,7 @@ type Staff = z.infer<typeof staffSchema> & {
 };
 
 const Staff = () => {
+  const { user } = useAuth();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -168,6 +170,7 @@ const Staff = () => {
   };
 
   const onSubmit = async (data: z.infer<typeof staffSchema>) => {
+    if (!user) return;
     try {
       const payload = {
         staff_id: `STF-${Date.now()}`,
@@ -181,6 +184,7 @@ const Staff = () => {
         address: data.address || null,
         department: data.department || null,
         hire_date: data.join_date,
+        user_id: user.id,
       };
 
       if (editingStaff) {
