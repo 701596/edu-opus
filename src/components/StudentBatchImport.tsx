@@ -74,6 +74,7 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const downloadTemplate = () => {
     const template = [
@@ -285,6 +286,7 @@ export const StudentBatchImport = ({ onImportComplete }: { onImportComplete: () 
           phone: row.phone?.trim() || null,
           address: row.address?.trim() || null,
           date_of_birth: row.date_of_birth || null,
+          user_id: user!.id,
         };
 
         const { error } = await supabase.from('students').insert([payload]);

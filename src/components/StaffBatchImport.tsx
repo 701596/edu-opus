@@ -23,6 +23,7 @@ export const StaffBatchImport = ({ onImportComplete }: { onImportComplete: () =>
   const [result, setResult] = useState<ImportResult | null>(null);
   const [progress, setProgress] = useState(0);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const downloadTemplate = () => {
     const template = [
@@ -156,6 +157,7 @@ export const StaffBatchImport = ({ onImportComplete }: { onImportComplete: () =>
           email: row.email?.trim() || null,
           address: row.address?.trim() || null,
           department: row.department?.trim() || null,
+          user_id: user!.id,
         };
 
         const { error } = await supabase.from('staff').insert([payload]);
