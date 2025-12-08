@@ -21,6 +21,7 @@ import RateLimitAdmin from "./pages/RateLimitAdmin";
 import Attendance from "./pages/Attendance";
 import AdminInvites from "./pages/AdminInvites";
 import AcceptInvite from "./pages/AcceptInvite";
+import JoinStaff from "./pages/JoinStaff";
 
 import NotFound from "./pages/NotFound";
 
@@ -39,8 +40,9 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/auth" element={<Auth />} />
 
-                {/* Invite Acceptance (public route) */}
+                {/* Invite Acceptance (public routes) */}
                 <Route path="/invite/:token" element={<AcceptInvite />} />
+                <Route path="/join" element={<JoinStaff />} />
 
 
 

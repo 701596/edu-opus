@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { StudentBatchImport } from '@/components/StudentBatchImport';
 import { BulkEditStudents } from '@/components/BulkEditStudents';
+import { useAuth } from '@/hooks/useAuth';
 
 const studentSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -42,6 +43,7 @@ type Student = z.infer<typeof studentSchema> & {
 };
 
 const Students = () => {
+  const { user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -140,6 +142,7 @@ const Students = () => {
   };
 
   const onSubmit = async (data: z.infer<typeof studentSchema>) => {
+    if (!user) return;
     try {
       const payload = {
         student_id: `STU-${Date.now()}`,
@@ -155,6 +158,7 @@ const Students = () => {
         address: data.address || null,
         date_of_birth: data.date_of_birth || null,
         enrollment_date: data.join_date,
+        user_id: user.id,
       };
 
       if (editingStudent) {
