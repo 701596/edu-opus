@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,10 +10,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, Receipt } from 'lucide-react';
+import { Plus, Edit, Trash2, Receipt, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { ExpenseBatchImport } from '@/components/ExpenseBatchImport';
+import { useSearchParams } from 'react-router-dom';
+
+const ITEMS_PER_PAGE = 20;
 
 const expenseSchema = z.object({
   description: z.string().min(1, 'Expense name is required'),
@@ -22,7 +25,15 @@ const expenseSchema = z.object({
   expense_date: z.string().min(1, 'Expense date is required'),
 });
 
-type Expense = z.infer<typeof expenseSchema> & { id: string };
+type Expense = {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  expense_date: string;
+  receipt_number?: string;
+  created_at: string;
+};
 
 const Expenses = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -31,7 +42,14 @@ const Expenses = () => {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
   const { toast } = useToast();
-  const { formatAmount, currency } = useCurrency();
+  const { formatAmount } = useCurrency();
+
+  // Pagination & Search state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  const [currentPage, setCurrentPage] = useState(parseInt(searchParams.get('page') || '1', 10));
+  const [totalCount, setTotalCount] = useState(0);
 
   const form = useForm<z.infer<typeof expenseSchema>>({
     resolver: zodResolver(expenseSchema),
@@ -43,9 +61,80 @@ const Expenses = () => {
     },
   });
 
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Sync URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (currentPage > 1) params.set('page', currentPage.toString());
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    setSearchParams(params, { replace: true });
+  }, [currentPage, debouncedSearch, setSearchParams]);
+
+  // Fetch expenses with pagination and search
+  const fetchExpenses = useCallback(async () => {
+    try {
+      setLoading(true);
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
+
+      // Get total count first
+      let countQuery = supabase
+        .from('expenses')
+        .select('*', { count: 'exact', head: true });
+
+      if (debouncedSearch) {
+        countQuery = countQuery.textSearch('search_vector', debouncedSearch.split(' ').join(' & '));
+      }
+
+      const { count, error: countError } = await countQuery;
+      if (countError) throw countError;
+      setTotalCount(count || 0);
+
+      // Fetch paginated data
+      let query = supabase
+        .from('expenses')
+        .select(`
+          id,
+          description,
+          amount,
+          category,
+          expense_date,
+          receipt_number,
+          created_at
+        `)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (debouncedSearch) {
+        query = query.textSearch('search_vector', debouncedSearch.split(' ').join(' & '));
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setExpenses(data || []);
+    } catch (error) {
+      console.error('Error fetching expenses:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch expenses',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, debouncedSearch, toast]);
+
   useEffect(() => {
     fetchExpenses();
-    
+
     // Real-time subscription
     const channel = supabase
       .channel('expenses-changes')
@@ -65,26 +154,13 @@ const Expenses = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [fetchExpenses]);
 
-  const fetchExpenses = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .order('expense_date', { ascending: false });
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
-      if (error) throw error;
-      setExpenses(data || []);
-    } catch (error) {
-      console.error('Error fetching expenses:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch expenses',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
     }
   };
 
@@ -121,23 +197,13 @@ const Expenses = () => {
       setEditingExpense(null);
       form.reset();
       fetchExpenses();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
       toast({
         title: 'Error',
-        description: error.message || 'An error occurred',
+        description: errorMessage,
         variant: 'destructive',
       });
-    }
-  };
-
-  const deleteExpense = async (id: string) => {
-    try {
-      const { error } = await supabase.from('expenses').delete().eq('id', id);
-      if (error) throw error;
-      toast({ title: 'Success', description: 'Expense deleted successfully' });
-      fetchExpenses();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -159,8 +225,9 @@ const Expenses = () => {
       toast({ title: 'Success', description: `Deleted ${selectedExpenses.size} expense(s) successfully` });
       setSelectedExpenses(new Set());
       fetchExpenses();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      toast({ title: 'Error', description: errorMessage, variant: 'destructive' });
     }
   };
 
@@ -205,10 +272,11 @@ const Expenses = () => {
       if (error) throw error;
       toast({ title: 'Success', description: 'Expense deleted successfully' });
       fetchExpenses();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete expense';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete expense',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -222,7 +290,7 @@ const Expenses = () => {
     }
   };
 
-  if (loading) {
+  if (loading && expenses.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -245,99 +313,115 @@ const Expenses = () => {
         <div className="flex gap-2">
           <ExpenseBatchImport onImportComplete={fetchExpenses} />
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
-          <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Expense
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add New Expense'}</DialogTitle>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Expense Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter expense name" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-4">
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Expense
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add New Expense'}</DialogTitle>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <FormField
                     control={form.control}
-                    name="amount"
+                    name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Amount</FormLabel>
+                        <FormLabel>Expense Name</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="Enter amount" 
-                            {...field}
-                            onChange={(e) => field.onChange(Number(e.target.value))}
-                          />
+                          <Input placeholder="Enter expense name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Amount</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="Enter amount"
+                              {...field}
+                              onChange={(e) => field.onChange(Number(e.target.value))}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="category"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Category</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., Utilities, Supplies" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                   <FormField
                     control={form.control}
-                    name="category"
+                    name="expense_date"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Category</FormLabel>
+                        <FormLabel>Date</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g., Utilities, Supplies" {...field} />
+                          <Input type="date" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="expense_date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex justify-end space-x-2 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
-                    {editingExpense ? 'Update' : 'Add'} Expense
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+                  <div className="flex justify-end space-x-2 pt-4">
+                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
+                      {editingExpense ? 'Update' : 'Add'} Expense
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
         </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+        <Input
+          placeholder="Search expenses (description, category, amount...)"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10"
+        />
       </div>
 
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>Expenses List</CardTitle>
+            <div className="flex items-center gap-4">
+              <CardTitle>Expenses List</CardTitle>
+              <span className="text-sm text-muted-foreground">
+                Showing {expenses.length} of {totalCount} expenses
+              </span>
+            </div>
             {selectedExpenses.size > 0 && (
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 size="sm"
                 onClick={handleBulkDelete}
                 className="gap-2"
@@ -354,7 +438,7 @@ const Expenses = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
-                    <Checkbox 
+                    <Checkbox
                       checked={selectedExpenses.size === expenses.length && expenses.length > 0}
                       onCheckedChange={toggleSelectAll}
                     />
@@ -370,14 +454,14 @@ const Expenses = () => {
                 {expenses.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center text-muted-foreground">
-                      No expenses found
+                      {debouncedSearch ? 'No expenses match your search' : 'No expenses found'}
                     </TableCell>
                   </TableRow>
                 ) : (
                   expenses.map((expense) => (
                     <TableRow key={expense.id}>
                       <TableCell>
-                        <Checkbox 
+                        <Checkbox
                           checked={selectedExpenses.has(expense.id)}
                           onCheckedChange={() => toggleExpenseSelection(expense.id)}
                         />
@@ -411,6 +495,35 @@ const Expenses = () => {
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BookOpen } from 'lucide-react';
 import { z } from 'zod';
+import { supabase } from '@/integrations/supabase/client';
 
 const signInSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -115,11 +116,12 @@ const Auth = () => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-3 mb-6">
+              <TabsTrigger value="member">Staff Login</TabsTrigger>
+              <TabsTrigger value="signin">Admin Login</TabsTrigger>
+              <TabsTrigger value="signup">Register School</TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4">
                 <div className="space-y-2">
@@ -150,8 +152,8 @@ const Auth = () => {
                     <p className="text-sm text-destructive">{errors.password}</p>
                   )}
                 </div>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="w-full bg-gradient-to-r from-primary to-primary-glow hover:opacity-90 transition-opacity"
                   disabled={isLoading}
                 >
@@ -159,7 +161,111 @@ const Auth = () => {
                 </Button>
               </form>
             </TabsContent>
-            
+
+            <TabsContent value="member">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                setErrors({});
+                setIsLoading(true);
+
+                const formData = new FormData(e.currentTarget);
+                const email = formData.get('email') as string;
+                const code = (formData.get('code') as string).trim().toUpperCase();
+
+                try {
+                  // 0. Ensure no stale session exists
+                  await supabase.auth.signOut();
+
+                  // 1. Try to Sign In with Code as password
+                  const { error: signInError } = await supabase.auth.signInWithPassword({
+                    email,
+                    password: code
+                  });
+
+                  if (signInError) {
+                    // 2. If Sign In fails, try Sign Up (first time user)
+                    const { error: signUpError } = await supabase.auth.signUp({
+                      email,
+                      password: code,
+                      options: {
+                        data: { name: 'Staff Member' } // Default name
+                      }
+                    });
+
+                    if (signUpError) throw new Error('Invalid email or security code');
+                  }
+
+                  // 3. Accept Invite / Link Member
+                  // We need to pass the user ID explicitly because the session might not be fully established
+                  let userId = user?.id;
+
+                  if (!userId) {
+                    const { data } = await supabase.auth.getUser();
+                    userId = data.user?.id;
+                  }
+
+                  if (!userId) {
+                    throw new Error('Authentication successful but User ID not found. Please try logging in again.');
+                  }
+
+                  const { error: joinError } = await supabase.rpc('accept_school_invite_by_code' as any, {
+                    p_code: code,
+                    p_user_id: userId
+                  });
+
+                  if (joinError) {
+                    console.error('Join RPC error:', joinError);
+                    throw new Error(joinError.message || 'Failed to link invite to account');
+                  }
+
+                  // Success!
+                  window.location.href = '/dashboard';
+
+                } catch (error: any) {
+                  setErrors({ form: error.message || 'Failed to login with code' });
+                } finally {
+                  setIsLoading(false);
+                }
+              }} className="space-y-4">
+                {errors.form && (
+                  <div className="p-3 rounded bg-destructive/10 text-destructive text-sm font-medium">
+                    {errors.form}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="member-email">School Email</Label>
+                  <Input
+                    id="member-email"
+                    name="email"
+                    type="email"
+                    placeholder="you@school.edu"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="member-code">Security Code</Label>
+                  <Input
+                    id="member-code"
+                    name="code"
+                    placeholder="A1B2C3"
+                    className="font-mono tracking-widest uppercase"
+                    maxLength={6}
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use the 6-character code provided by your principal.
+                  </p>
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-purple-600 to-purple-400 hover:opacity-90 transition-opacity"
+                  disabled={isLoading}
+                >
+                  {isLoading ? ' verifying...' : 'Login with Code'}
+                </Button>
+              </form>
+            </TabsContent>
+
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
@@ -204,12 +310,12 @@ const Auth = () => {
                     <p className="text-sm text-destructive">{errors.password}</p>
                   )}
                 </div>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   className="w-full bg-gradient-to-r from-primary to-primary-glow hover:opacity-90 transition-opacity"
                   disabled={isLoading}
                 >
-                  {isLoading ? 'Creating account...' : 'Create Account'}
+                  {isLoading ? 'Creating school...' : 'Register School'}
                 </Button>
               </form>
             </TabsContent>

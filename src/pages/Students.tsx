@@ -12,7 +12,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, GraduationCap } from 'lucide-react';
+import { Plus, Edit, Trash2, GraduationCap, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { StudentBatchImport } from '@/components/StudentBatchImport';
@@ -32,7 +32,7 @@ const studentSchema = z.object({
   date_of_birth: z.string().optional().or(z.literal('')),
 });
 
-type Student = z.infer<typeof studentSchema> & { 
+type Student = z.infer<typeof studentSchema> & {
   id: string;
   created_at?: string;
   updated_at?: string;
@@ -47,6 +47,16 @@ const Students = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
 
@@ -67,26 +77,60 @@ const Students = () => {
     },
   });
 
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1); // Reset to first page on new search
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     fetchStudents();
-    
+
     const channel = supabase
       .channel('students-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchStudents)
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [currentPage, debouncedSearch]);
 
   const fetchStudents = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
+      const from = (currentPage - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = supabase
         .from('students')
-        .select('*, total_fee, remaining_fee, payment_status')
+        .select('*, total_fee, remaining_fee, payment_status', { count: 'exact' })
         .order('created_at', { ascending: false });
+
+      // Add search filter if query exists
+      if (debouncedSearch && debouncedSearch.trim()) {
+        const tsQuery = debouncedSearch
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean)
+          .map(term => `${term}:*`)
+          .join(' & ');
+
+        query = query.textSearch('search_vector', tsQuery, {
+          type: 'websearch',
+          config: 'english',
+        });
+      }
+
+      query = query.range(from, to);
+
+      const { data, error, count } = await query;
 
       if (error) throw error;
       setStudents((data || []) as Student[]);
+      setTotalCount(count || 0);
     } catch (error) {
       console.error('Error fetching students:', error);
       toast({ title: 'Error', description: 'Failed to fetch students', variant: 'destructive' });
@@ -122,13 +166,13 @@ const Students = () => {
             .eq('email', data.email)
             .neq('id', editingStudent.id)
             .maybeSingle();
-          
+
           if (existing) {
             toast({ title: 'Error', description: 'A student with this email already exists in your account', variant: 'destructive' });
             return;
           }
         }
-        
+
         const { error } = await supabase.from('students').update(payload).eq('id', editingStudent.id);
         if (error) throw error;
         toast({ title: 'Success', description: 'Student updated successfully' });
@@ -140,13 +184,13 @@ const Students = () => {
             .select('id')
             .eq('email', data.email)
             .maybeSingle();
-          
+
           if (existing) {
             toast({ title: 'Error', description: 'A student with this email already exists in your account', variant: 'destructive' });
             return;
           }
         }
-        
+
         const { data: newStudent, error } = await supabase
           .from('students')
           .insert([payload])
@@ -156,8 +200,8 @@ const Students = () => {
         if (error) throw error;
 
         // Auto-create fee folder for new student (handled by database trigger)
-        toast({ 
-          title: 'Success', 
+        toast({
+          title: 'Success',
           description: 'Student added successfully. Fee folder created automatically.'
         });
       }
@@ -283,60 +327,28 @@ const Students = () => {
           <BulkEditStudents students={students} onEditComplete={fetchStudents} />
           <StudentBatchImport onImportComplete={fetchStudents} />
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
-          <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Student
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-300">
-            <DialogHeader>
-              <DialogTitle className="animate-in slide-in-from-top-2 duration-300">
-                {editingStudent ? 'Edit Student' : 'Add New Student'}
-              </DialogTitle>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 animate-in slide-in-from-bottom-2 duration-500">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Student Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter student name" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="class"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Class</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter class (e.g., Grade 10)" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-4">
+            <DialogTrigger asChild>
+              <Button className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Student
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto animate-in fade-in-0 zoom-in-95 duration-300">
+              <DialogHeader>
+                <DialogTitle className="animate-in slide-in-from-top-2 duration-300">
+                  {editingStudent ? 'Edit Student' : 'Add New Student'}
+                </DialogTitle>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 animate-in slide-in-from-bottom-2 duration-500">
                   <FormField
                     control={form.control}
-                    name="fee_amount"
+                    name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Fee Amount</FormLabel>
+                        <FormLabel>Student Name</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="Enter fee amount" 
-                            {...field}
-                            onChange={(e) => field.onChange(Number(e.target.value))}
-                          />
+                          <Input placeholder="Enter student name" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -344,128 +356,160 @@ const Students = () => {
                   />
                   <FormField
                     control={form.control}
-                    name="fee_type"
+                    name="class"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Fee Type</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select fee type" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="monthly">Monthly</SelectItem>
-                            <SelectItem value="annually">Annually</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <FormLabel>Class</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter class (e.g., Grade 10)" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="guardian_name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Guardian Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter guardian name" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="guardian_phone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Guardian Phone Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter guardian phone number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="join_date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Joining Date</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email (Optional)</FormLabel>
-                      <FormControl>
-                        <Input type="email" placeholder="Enter student email" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="phone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone (Optional)</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter student phone number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="address"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address (Optional)</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="Enter student address" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="date_of_birth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date of Birth (Optional)</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex justify-end space-x-2 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
-                    {editingStudent ? 'Update' : 'Add'} Student
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </DialogContent>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="fee_amount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fee Amount</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              placeholder="Enter fee amount"
+                              {...field}
+                              onChange={(e) => field.onChange(Number(e.target.value))}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="fee_type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fee Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select fee type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="monthly">Monthly</SelectItem>
+                              <SelectItem value="annually">Annually</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="guardian_name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Guardian Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter guardian name" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="guardian_phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Guardian Phone Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter guardian phone number" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="join_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Joining Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email (Optional)</FormLabel>
+                        <FormControl>
+                          <Input type="email" placeholder="Enter student email" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter student phone number" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Address (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Enter student address" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="date_of_birth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date of Birth (Optional)</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="flex justify-end space-x-2 pt-4">
+                    <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit" className="bg-gradient-to-r from-primary to-primary-glow hover:opacity-90">
+                      {editingStudent ? 'Update' : 'Add'} Student
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
           </Dialog>
         </div>
       </div>
@@ -475,8 +519,8 @@ const Students = () => {
           <div className="flex justify-between items-center">
             <CardTitle>Students List</CardTitle>
             {selectedStudents.size > 0 && (
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 size="sm"
                 onClick={handleBulkDelete}
                 className="gap-2"
@@ -486,6 +530,30 @@ const Students = () => {
               </Button>
             )}
           </div>
+
+          {/* Search Bar */}
+          <div className="flex items-center gap-2 mt-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search students by name, ID, email, class, or guardian..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {searchQuery && (
+              <Button variant="ghost" size="sm" onClick={() => setSearchQuery('')}>
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {/* Result count */}
+          <p className="text-sm text-muted-foreground mt-2">
+            Showing {students.length} of {totalCount} students
+            {debouncedSearch && ` matching "${debouncedSearch}"`}
+          </p>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -493,7 +561,7 @@ const Students = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
-                    <Checkbox 
+                    <Checkbox
                       checked={selectedStudents.size === students.length && students.length > 0}
                       onCheckedChange={toggleSelectAll}
                     />
@@ -518,7 +586,7 @@ const Students = () => {
                   students.map((student) => (
                     <TableRow key={student.id}>
                       <TableCell>
-                        <Checkbox 
+                        <Checkbox
                           checked={selectedStudents.has(student.id)}
                           onCheckedChange={() => toggleStudentSelection(student.id)}
                         />
@@ -533,13 +601,12 @@ const Students = () => {
                         {formatAmount(Number((student as any).remaining_fee || 0))}
                       </TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                          (student as any).payment_status === 'paid' 
-                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
-                            : (student as any).payment_status === 'partial'
+                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${(student as any).payment_status === 'paid'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+                          : (student as any).payment_status === 'partial'
                             ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
                             : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                        }`}>
+                          }`}>
                           {(student as any).payment_status || 'pending'}
                         </span>
                       </TableCell>
@@ -564,6 +631,35 @@ const Students = () => {
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalCount > pageSize && (
+            <div className="flex items-center justify-between mt-4 px-2">
+              <p className="text-sm text-muted-foreground">
+                Page {currentPage} of {Math.ceil(totalCount / pageSize)}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil(totalCount / pageSize), prev + 1))}
+                  disabled={currentPage >= Math.ceil(totalCount / pageSize)}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

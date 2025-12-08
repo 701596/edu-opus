@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,9 +12,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Edit, Trash2, CreditCard, FolderOpen } from 'lucide-react';
+import { Plus, Edit, Trash2, CreditCard, FolderOpen, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useSearchParams } from 'react-router-dom';
+
+const ITEMS_PER_PAGE = 20;
 
 const feeFolderSchema = z.object({
   student_id: z.string().min(1, 'Student is required'),
@@ -26,9 +29,17 @@ const feeFolderSchema = z.object({
   status: z.string().optional(),
 });
 
-type FeeFolder = z.infer<typeof feeFolderSchema> & { 
-  id: string; 
-  students?: { name: string };
+type FeeFolder = {
+  id: string;
+  student_id: string;
+  folder_name: string;
+  category: string;
+  amount_due: number;
+  amount_paid: number;
+  due_date?: string;
+  status?: string;
+  created_at: string;
+  students?: { name: string; phone?: string };
   remaining_amount?: number;
 };
 
@@ -41,6 +52,15 @@ const RemainingFees = () => {
   const [selectedFeeFolders, setSelectedFeeFolders] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
+
+  // Pagination & Search state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  const [currentPage, setCurrentPage] = useState(parseInt(searchParams.get('page') || '1', 10));
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalStudentRemainingFees, setTotalStudentRemainingFees] = useState(0);
+  const [totalFolderRemaining, setTotalFolderRemaining] = useState(0);
 
   const form = useForm<z.infer<typeof feeFolderSchema>>({
     resolver: zodResolver(feeFolderSchema),
@@ -55,10 +75,127 @@ const RemainingFees = () => {
     },
   });
 
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Sync URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (currentPage > 1) params.set('page', currentPage.toString());
+    if (debouncedSearch) params.set('search', debouncedSearch);
+    setSearchParams(params, { replace: true });
+  }, [currentPage, debouncedSearch, setSearchParams]);
+
+  // Fetch fee folders with pagination and search
+  const fetchFeeFolders = useCallback(async () => {
+    try {
+      setLoading(true);
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
+
+      // Get total count for folders with remaining > 0
+      let countQuery = supabase
+        .from('fee_folders')
+        .select('id, amount_due, amount_paid, students!inner(name, phone)', { count: 'exact', head: false });
+
+      if (debouncedSearch) {
+        // Search by student name or phone using joined table
+        countQuery = countQuery.or(`name.ilike.%${debouncedSearch}%,phone.ilike.%${debouncedSearch}%`, { referencedTable: 'students' });
+      }
+
+      const { data: countData, count, error: countError } = await countQuery;
+
+      if (countError) throw countError;
+
+      // Filter to only those with remaining > 0 and calculate totals
+      const foldersWithRemaining = (countData || []).filter(f =>
+        Number(f.amount_due) - Number(f.amount_paid || 0) > 0
+      );
+
+      setTotalCount(foldersWithRemaining.length);
+      const totalRemaining = foldersWithRemaining.reduce((sum, f) =>
+        sum + (Number(f.amount_due) - Number(f.amount_paid || 0)), 0
+      );
+      setTotalFolderRemaining(totalRemaining);
+
+      // Fetch paginated data with remaining > 0
+      let query = supabase
+        .from('fee_folders')
+        .select(`
+          id,
+          student_id,
+          folder_name,
+          category,
+          amount_due,
+          amount_paid,
+          due_date,
+          status,
+          created_at,
+          students!inner (
+            name,
+            phone
+          )
+        `)
+        .order('amount_due', { ascending: false })
+        .range(from, to);
+
+      if (debouncedSearch) {
+        query = query.or(`name.ilike.%${debouncedSearch}%,phone.ilike.%${debouncedSearch}%`, { referencedTable: 'students' });
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Calculate remaining amounts and filter
+      const processedFolders = (data || [])
+        .map(folder => ({
+          ...folder,
+          remaining_amount: Number(folder.amount_due) - (Number(folder.amount_paid) || 0)
+        }))
+        .filter(folder => folder.remaining_amount > 0)
+        .sort((a, b) => b.remaining_amount - a.remaining_amount);
+
+      setFeeFolders(processedFolders);
+    } catch (error) {
+      console.error('Error fetching fee folders:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch fee folders',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, debouncedSearch, toast]);
+
+  const fetchStudents = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('students')
+        .select('id, name, remaining_fee')
+        .order('name');
+
+      if (error) throw error;
+      setStudents(data || []);
+
+      // Calculate total student remaining fees
+      const total = (data || []).reduce((sum, student) => sum + Number(student.remaining_fee || 0), 0);
+      setTotalStudentRemainingFees(total);
+    } catch (error) {
+      console.error('Error fetching students:', error);
+    }
+  }, []);
+
   useEffect(() => {
     fetchFeeFolders();
     fetchStudents();
-    
+
     // Real-time subscriptions
     const feeFoldersChannel = supabase
       .channel('fee-folders-changes')
@@ -83,52 +220,13 @@ const RemainingFees = () => {
       supabase.removeChannel(paymentsChannel);
       supabase.removeChannel(studentsChannel);
     };
-  }, []);
+  }, [fetchFeeFolders, fetchStudents]);
 
-  const fetchFeeFolders = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('fee_folders')
-        .select(`
-          *,
-          students (
-            name
-          )
-        `)
-        .order('due_date', { ascending: true });
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
-      if (error) throw error;
-      
-      // Calculate remaining amounts
-      const foldersWithRemaining = (data || []).map(folder => ({
-        ...folder,
-        remaining_amount: Number(folder.amount_due) - (Number(folder.amount_paid) || 0)
-      }));
-      
-      setFeeFolders(foldersWithRemaining);
-    } catch (error) {
-      console.error('Error fetching fee folders:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch fee folders',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStudents = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('id, name, remaining_fee')
-        .order('name');
-
-      if (error) throw error;
-      setStudents(data || []);
-    } catch (error) {
-      console.error('Error fetching students:', error);
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
     }
   };
 
@@ -136,7 +234,7 @@ const RemainingFees = () => {
     try {
       const amountPaid = data.amount_paid || 0;
       const status = amountPaid >= data.amount_due ? 'paid' : amountPaid > 0 ? 'partial' : 'pending';
-      
+
       if (editingFeeFolder) {
         const { error } = await supabase
           .from('fee_folders')
@@ -174,10 +272,11 @@ const RemainingFees = () => {
       setEditingFeeFolder(null);
       form.reset();
       fetchFeeFolders();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
       toast({
         title: 'Error',
-        description: error.message || 'An error occurred',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -186,23 +285,14 @@ const RemainingFees = () => {
   const handleEdit = (feeFolder: FeeFolder) => {
     setEditingFeeFolder(feeFolder);
     form.reset({
-      ...feeFolder,
+      student_id: feeFolder.student_id,
+      folder_name: feeFolder.folder_name,
+      category: feeFolder.category,
       amount_due: Number(feeFolder.amount_due),
       amount_paid: Number(feeFolder.amount_paid) || 0,
       due_date: feeFolder.due_date || '',
     });
     setIsDialogOpen(true);
-  };
-
-  const deleteFeeFolder = async (id: string) => {
-    try {
-      const { error } = await supabase.from('fee_folders').delete().eq('id', id);
-      if (error) throw error;
-      toast({ title: 'Success', description: 'Fee folder deleted successfully' });
-      fetchFeeFolders();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
-    }
   };
 
   const handleBulkDelete = async () => {
@@ -223,8 +313,9 @@ const RemainingFees = () => {
       toast({ title: 'Success', description: `Deleted ${selectedFeeFolders.size} fee folder(s) successfully` });
       setSelectedFeeFolders(new Set());
       fetchFeeFolders();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      toast({ title: 'Error', description: errorMessage, variant: 'destructive' });
     }
   };
 
@@ -258,10 +349,11 @@ const RemainingFees = () => {
       if (error) throw error;
       toast({ title: 'Success', description: 'Fee folder deleted successfully' });
       fetchFeeFolders();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete fee folder';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to delete fee folder',
+        description: errorMessage,
         variant: 'destructive',
       });
     }
@@ -283,10 +375,7 @@ const RemainingFees = () => {
     }
   };
 
-  const totalRemaining = feeFolders.reduce((sum, folder) => sum + (folder.remaining_amount || 0), 0);
-  const totalStudentRemainingFees = students.reduce((sum, student) => sum + Number(student.remaining_fee || 0), 0);
-
-  if (loading) {
+  if (loading && feeFolders.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -394,9 +483,9 @@ const RemainingFees = () => {
                       <FormItem>
                         <FormLabel>Amount Due</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="Enter amount" 
+                          <Input
+                            type="number"
+                            placeholder="Enter amount"
                             {...field}
                             onChange={(e) => field.onChange(Number(e.target.value))}
                           />
@@ -412,9 +501,9 @@ const RemainingFees = () => {
                       <FormItem>
                         <FormLabel>Amount Paid</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="number" 
-                            placeholder="Enter paid amount" 
+                          <Input
+                            type="number"
+                            placeholder="Enter paid amount"
                             {...field}
                             onChange={(e) => field.onChange(Number(e.target.value) || 0)}
                           />
@@ -451,6 +540,17 @@ const RemainingFees = () => {
         </Dialog>
       </div>
 
+      {/* Search Bar */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+        <Input
+          placeholder="Search by student name or phone..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+
       {/* Summary Cards */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
@@ -470,8 +570,8 @@ const RemainingFees = () => {
             <FolderOpen className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{formatAmount(totalRemaining)}</div>
-            <p className="text-xs text-muted-foreground">Across {feeFolders.filter(f => f.remaining_amount! > 0).length} folders</p>
+            <div className="text-2xl font-bold text-destructive">{formatAmount(totalFolderRemaining)}</div>
+            <p className="text-xs text-muted-foreground">Across {totalCount} folders with balance</p>
           </CardContent>
         </Card>
       </div>
@@ -479,10 +579,15 @@ const RemainingFees = () => {
       <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card hover-lift">
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>Fee Folders</CardTitle>
+            <div className="flex items-center gap-4">
+              <CardTitle>Fee Folders</CardTitle>
+              <span className="text-sm text-muted-foreground">
+                Showing {feeFolders.length} of {totalCount} with outstanding balance
+              </span>
+            </div>
             {selectedFeeFolders.size > 0 && (
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 size="sm"
                 onClick={handleBulkDelete}
                 className="gap-2"
@@ -499,7 +604,7 @@ const RemainingFees = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
-                    <Checkbox 
+                    <Checkbox
                       checked={selectedFeeFolders.size === feeFolders.length && feeFolders.length > 0}
                       onCheckedChange={toggleSelectAll}
                     />
@@ -519,14 +624,14 @@ const RemainingFees = () => {
                 {feeFolders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center text-muted-foreground">
-                      No fee folders found
+                      {debouncedSearch ? 'No fee folders match your search' : 'No outstanding fee folders found'}
                     </TableCell>
                   </TableRow>
                 ) : (
                   feeFolders.map((folder) => (
                     <TableRow key={folder.id}>
                       <TableCell>
-                        <Checkbox 
+                        <Checkbox
                           checked={selectedFeeFolders.has(folder.id)}
                           onCheckedChange={() => toggleFeeFolderSelection(folder.id)}
                         />
@@ -574,6 +679,35 @@ const RemainingFees = () => {
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

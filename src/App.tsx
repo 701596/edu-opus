@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { CurrencyProvider } from "@/contexts/CurrencyContext";
+import { RoleProvider } from "@/contexts/RoleContext";
+import { ProtectedRoute, PrincipalRoute, TeacherRoute /* FinanceRoute */ } from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -15,6 +17,11 @@ import Payments from "./pages/Payments";
 import Expenses from "./pages/Expenses";
 import Reports from "./pages/Reports";
 import RemainingFees from "./pages/RemainingFees";
+import RateLimitAdmin from "./pages/RateLimitAdmin";
+import Attendance from "./pages/Attendance";
+import AdminInvites from "./pages/AdminInvites";
+import AcceptInvite from "./pages/AcceptInvite";
+
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,28 +30,96 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <AuthProvider>
-        <CurrencyProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/dashboard" element={<Layout><Dashboard /></Layout>} />
-            <Route path="/students" element={<Layout><Students /></Layout>} />
-            <Route path="/staff" element={<Layout><Staff /></Layout>} />
-            <Route path="/payments" element={<Layout><Payments /></Layout>} />
-            <Route path="/expenses" element={<Layout><Expenses /></Layout>} />
-            <Route path="/reports" element={<Layout><Reports /></Layout>} />
-            <Route path="/remaining-fees" element={<Layout><RemainingFees /></Layout>} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </CurrencyProvider>
+        <RoleProvider>
+          <CurrencyProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/auth" element={<Auth />} />
+
+                {/* Invite Acceptance (public route) */}
+                <Route path="/invite/:token" element={<AcceptInvite />} />
+
+
+
+                {/* Protected Routes */}
+                <Route path="/dashboard" element={
+                  <ProtectedRoute>
+                    <Layout><Dashboard /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/students" element={
+                  <ProtectedRoute>
+                    <Layout><Students /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/staff" element={
+                  <PrincipalRoute>
+                    <Layout><Staff /></Layout>
+                  </PrincipalRoute>
+                } />
+                <Route path="/payments" element={
+                  <ProtectedRoute>
+                    <Layout><Payments /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/expenses" element={
+                  <ProtectedRoute>
+                    <Layout><Expenses /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/reports" element={
+                  <ProtectedRoute>
+                    <Layout><Reports /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/remaining-fees" element={
+                  <ProtectedRoute>
+                    <Layout><RemainingFees /></Layout>
+                  </ProtectedRoute>
+                } />
+
+                {/* Attendance - Teachers and Principal */}
+                <Route path="/attendance" element={
+                  <ProtectedRoute>
+                    <Layout><Attendance /></Layout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/my-classes" element={
+                  <ProtectedRoute>
+                    <Layout><Attendance /></Layout>
+                  </ProtectedRoute>
+                } />
+
+                {/* Admin Routes */}
+                <Route path="/admin" element={
+                  <PrincipalRoute>
+                    <Layout><AdminInvites /></Layout>
+                  </PrincipalRoute>
+                } />
+                <Route path="/admin/invites" element={
+                  <PrincipalRoute>
+                    <Layout><AdminInvites /></Layout>
+                  </PrincipalRoute>
+                } />
+                <Route path="/admin/rate-limits" element={
+                  <PrincipalRoute>
+                    <Layout><RateLimitAdmin /></Layout>
+                  </PrincipalRoute>
+                } />
+
+                {/* Catch-all */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </CurrencyProvider>
+        </RoleProvider>
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
 
 export default App;
+
