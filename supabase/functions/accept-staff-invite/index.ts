@@ -1,3 +1,14 @@
+/**
+ * Accept Staff Invite - Supabase Edge Function
+ * 
+ * Validates security code and adds user to school.
+ * Uses atomic RPC function for database operations.
+ * 
+ * @endpoint POST /accept-staff-invite
+ * @body { token: string, code: string }
+ * @returns { status: 'SUCCESS' | 'INVALID_TOKEN' | 'INVALID_CODE' | 'EXPIRED' | 'ALREADY_ACCEPTED' | 'NOT_AUTHENTICATED' | 'ERROR', ... }
+ */
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -6,6 +17,28 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type AcceptStatus =
+  | "SUCCESS"
+  | "INVALID_TOKEN"
+  | "INVALID_CODE"
+  | "EXPIRED"
+  | "ALREADY_ACCEPTED"
+  | "NOT_AUTHENTICATED"
+  | "ERROR";
+
+interface AcceptInviteRequest {
+  token: string;
+  code: string;
+}
+
+interface AcceptInviteResponse {
+  status: AcceptStatus;
+  message?: string;
+  role?: string;
+  school_id?: string;
+  school_name?: string;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -13,175 +46,137 @@ serve(async (req) => {
   }
 
   try {
-    // Get authorization header
+    // =============================================
+    // 1. Validate Authorization Header
+    // =============================================
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Authentication required. Please log in first." }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return jsonResponse<AcceptInviteResponse>(
+        {
+          status: "NOT_AUTHENTICATED",
+          message: "Authentication required. Please log in first."
+        },
+        401
       );
     }
 
-    // Initialize Supabase clients
+    // =============================================
+    // 2. Initialize Supabase Client
+    // =============================================
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY")!;
 
     // Client with user's auth token
     const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
 
-    // Admin client (bypass RLS for invite operations)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Get current user
+    // =============================================
+    // 3. Authenticate User
+    // =============================================
     const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
     if (userError || !user) {
-      console.error("Auth error:", userError);
-      return new Response(
-        JSON.stringify({ error: "Invalid authentication. Please log in again." }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      console.error("Auth error:", userError?.message);
+      return jsonResponse<AcceptInviteResponse>(
+        {
+          status: "NOT_AUTHENTICATED",
+          message: "Invalid or expired authentication. Please log in again."
+        },
+        401
       );
     }
 
-    console.log("Accepting invite for user:", user.id, user.email);
-
-    // Parse request body
-    const body = await req.json();
-    const { token } = body;
+    // =============================================
+    // 4. Parse and Validate Request Body
+    // =============================================
+    const body: AcceptInviteRequest = await req.json();
+    const { token, code } = body;
 
     if (!token) {
-      return new Response(
-        JSON.stringify({ error: "Missing invite token" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      return jsonResponse<AcceptInviteResponse>(
+        { status: "INVALID_TOKEN", message: "Missing invite token" },
+        400
       );
     }
 
-    // Find the invite using service role (bypass RLS)
-    const { data: invite, error: inviteError } = await supabaseAdmin
-      .from("staff_invites")
-      .select("*, schools(name)")
-      .eq("invite_token", token)
-      .single();
-
-    if (inviteError || !invite) {
-      console.error("Invite lookup error:", inviteError);
-      return new Response(
-        JSON.stringify({ error: "Invalid invite token. The link may be incorrect." }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    if (!code) {
+      return jsonResponse<AcceptInviteResponse>(
+        { status: "INVALID_CODE", message: "Security code is required" },
+        400
       );
     }
 
-    console.log("Found invite:", invite.id, "for email:", invite.email);
-
-    // Check if already accepted
-    if (invite.accepted) {
-      return new Response(
-        JSON.stringify({ error: "This invite has already been used." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Validate code format (6 alphanumeric characters)
+    const codeRegex = /^[A-Za-z0-9]{6}$/;
+    if (!codeRegex.test(code)) {
+      return jsonResponse<AcceptInviteResponse>(
+        { status: "INVALID_CODE", message: "Security code must be 6 alphanumeric characters" },
+        400
       );
     }
 
-    // Check if expired
-    const now = new Date();
-    const expiresAt = new Date(invite.expires_at);
-    if (now > expiresAt) {
-      return new Response(
-        JSON.stringify({ error: "This invite has expired. Please request a new one." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // =============================================
+    // 5. Call Atomic RPC Function
+    // =============================================
+    // The RPC function handles:
+    // - Token validation
+    // - Security code verification
+    // - Expiration check
+    // - Already accepted check
+    // - Creating school_members record
+    // - Updating invite status
+    // - Audit logging
+    const { data: rpcResult, error: rpcError } = await supabaseUser.rpc("accept_invite_by_code", {
+      p_token: token,
+      p_code: code.toUpperCase(),
+    });
+
+    if (rpcError) {
+      console.error("RPC error:", rpcError.message);
+      return jsonResponse<AcceptInviteResponse>(
+        { status: "ERROR", message: "Failed to process invite. Please try again." },
+        500
       );
     }
 
-    // Optional: Verify email matches (uncomment if you want strict email matching)
-    // if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
-    //   return new Response(
-    //     JSON.stringify({ error: `This invite was sent to ${invite.email}. Please log in with that email.` }),
-    //     { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    //   );
-    // }
+    // =============================================
+    // 6. Map RPC Response to HTTP Response
+    // =============================================
+    const statusCodeMap: Record<AcceptStatus, number> = {
+      "SUCCESS": 200,
+      "NOT_AUTHENTICATED": 401,
+      "INVALID_TOKEN": 404,
+      "INVALID_CODE": 400,
+      "EXPIRED": 410,
+      "ALREADY_ACCEPTED": 409,
+      "ERROR": 500,
+    };
 
-    // Check if user is already a staff member for this school
-    const { data: existingMember } = await supabaseAdmin
-      .from("staff_members")
-      .select("id")
-      .eq("school_id", invite.school_id)
-      .eq("user_id", user.id)
-      .single();
+    const httpStatus = statusCodeMap[rpcResult.status as AcceptStatus] || 500;
 
-    if (existingMember) {
-      // User already a member, just mark invite as accepted
-      await supabaseAdmin
-        .from("staff_invites")
-        .update({
-          accepted: true,
-          accepted_by: user.id,
-          accepted_at: new Date().toISOString(),
-        })
-        .eq("id", invite.id);
+    return jsonResponse<AcceptInviteResponse>({
+      status: rpcResult.status,
+      message: rpcResult.message,
+      role: rpcResult.role,
+      school_id: rpcResult.school_id,
+      school_name: rpcResult.school_name,
+    }, httpStatus);
 
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "You are already a member of this school.",
-          school_id: invite.school_id,
-          school_name: invite.schools?.name || "Unknown",
-          role: invite.role,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Create staff_members record
-    const { error: memberError } = await supabaseAdmin
-      .from("staff_members")
-      .insert({
-        owner_id: invite.owner_id,
-        school_id: invite.school_id,
-        user_id: user.id,
-        role: invite.role,
-      });
-
-    if (memberError) {
-      console.error("Failed to create staff member:", memberError);
-      return new Response(
-        JSON.stringify({ error: "Failed to add you to the school. Please try again." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Mark invite as accepted
-    const { error: updateError } = await supabaseAdmin
-      .from("staff_invites")
-      .update({
-        accepted: true,
-        accepted_by: user.id,
-        accepted_at: new Date().toISOString(),
-      })
-      .eq("id", invite.id);
-
-    if (updateError) {
-      console.error("Failed to update invite:", updateError);
-      // Non-critical error, member was already added
-    }
-
-    console.log("Staff member added successfully:", user.id, "to school:", invite.school_id);
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `Welcome! You've joined as ${invite.role}.`,
-        school_id: invite.school_id,
-        school_name: invite.schools?.name || "Unknown",
-        role: invite.role,
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
   } catch (error) {
     console.error("Unexpected error:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error. Please try again." }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    return jsonResponse<AcceptInviteResponse>(
+      { status: "ERROR", message: "Internal server error. Please try again." },
+      500
     );
   }
 });
+
+/**
+ * Helper to create JSON response with CORS headers
+ */
+function jsonResponse<T>(data: T, status: number = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}

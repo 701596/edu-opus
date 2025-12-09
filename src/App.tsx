@@ -42,6 +42,7 @@ const App = () => (
 
                 {/* Invite Acceptance (public routes) */}
                 <Route path="/invite/:token" element={<AcceptInvite />} />
+                <Route path="/accept-invite" element={<AcceptInvite />} />
                 <Route path="/join" element={<JoinStaff />} />
 
 

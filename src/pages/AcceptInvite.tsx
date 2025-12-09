@@ -1,30 +1,45 @@
 /**
  * Accept Invite Page
  * 
- * Handles invitation acceptance flow:
- * 1. Validates invite token
- * 2. Shows invite details (school, role)
- * 3. If logged in → accept invite → redirect to role dashboard
- * 4. If not logged in → show signup/login options
+ * Secure invitation acceptance flow:
+ * 1. Validates invite token from URL
+ * 2. If logged in → show code input → accept invite → redirect by role
+ * 3. If not logged in → show auth flow → then accept
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, XCircle, School, UserPlus, LogIn, Shield } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, School, LogIn, Shield, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { UserRole } from '@/contexts/RoleContext';
-import { getDefaultRoute } from '@/config/navigation';
 
 // =============================================
 // Types
 // =============================================
+
+type AcceptStatus =
+    | 'SUCCESS'
+    | 'INVALID_TOKEN'
+    | 'INVALID_CODE'
+    | 'EXPIRED'
+    | 'ALREADY_ACCEPTED'
+    | 'NOT_AUTHENTICATED'
+    | 'ERROR';
+
+interface AcceptInviteResponse {
+    status: AcceptStatus;
+    message?: string;
+    role?: UserRole;
+    school_id?: string;
+    school_name?: string;
+}
 
 interface InviteDetails {
     id: string;
@@ -33,7 +48,6 @@ interface InviteDetails {
     school_name: string;
     school_id: string;
     expires_at: string;
-    created_at: string;
     is_valid: boolean;
 }
 
@@ -43,6 +57,10 @@ interface InviteDetails {
 
 export default function AcceptInvite() {
     const { token } = useParams<{ token: string }>();
+    const [searchParams] = useSearchParams();
+    const tokenFromQuery = searchParams.get('token');
+    const inviteToken = token || tokenFromQuery;
+
     const navigate = useNavigate();
     const { user, loading: authLoading } = useAuth();
 
@@ -50,41 +68,44 @@ export default function AcceptInvite() {
     const [isLoading, setIsLoading] = useState(true);
     const [isAccepting, setIsAccepting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [errorStatus, setErrorStatus] = useState<AcceptStatus | null>(null);
     const [success, setSuccess] = useState(false);
+    const [securityCode, setSecurityCode] = useState('');
+    const [acceptedRole, setAcceptedRole] = useState<UserRole | null>(null);
+    const [acceptedSchoolId, setAcceptedSchoolId] = useState<string | null>(null);
 
-    // Fetch invite details
+    // =============================================
+    // Fetch Invite Details
+    // =============================================
     useEffect(() => {
         async function fetchInvite() {
-            if (!token) {
-                setError('Invalid invite link');
+            if (!inviteToken) {
+                setError('Invalid invite link - no token provided');
                 setIsLoading(false);
                 return;
             }
 
             try {
-                console.log('Fetching invite with token:', token);
-
-                // Call RPC to get invite details
-                const { data, error: rpcError } = await supabase.rpc('get_invite_by_token' as any, {
-                    p_token: token,
+                // Call RPC to get invite details (public lookup)
+                const { data, error: rpcError } = await supabase.rpc('get_invite_by_token' as unknown as never, {
+                    p_token: inviteToken,
                 });
 
-                console.log('RPC response:', { data, error: rpcError });
-
                 if (rpcError) {
-                    console.error('RPC error:', rpcError);
-                    setError(`RPC Error: ${rpcError.message}`);
+                    console.error('Invite lookup error:', rpcError);
+                    setError('Failed to load invite details');
                     setIsLoading(false);
                     return;
                 }
 
                 if (!data) {
                     setError('This invite link is invalid or has expired');
+                    setErrorStatus('INVALID_TOKEN');
                     setIsLoading(false);
                     return;
                 }
 
-                setInvite(data);
+                setInvite(data as InviteDetails);
             } catch (err) {
                 console.error('Fetch error:', err);
                 setError('Failed to load invite details');
@@ -93,58 +114,114 @@ export default function AcceptInvite() {
         }
 
         fetchInvite();
-    }, [token]);
+    }, [inviteToken]);
 
-    // Accept invite
-    const handleAccept = async () => {
-        if (!token || !user) return;
+    // =============================================
+    // Accept Invite Handler
+    // =============================================
+    const handleAcceptInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!inviteToken || !user) return;
+        if (!securityCode || securityCode.length !== 6) {
+            setError('Please enter the 6-character security code');
+            return;
+        }
 
         setIsAccepting(true);
         setError(null);
+        setErrorStatus(null);
 
         try {
-            // Pass explicit user.id to match our new RPC logic
-            const { data, error: acceptError } = await supabase.rpc('accept_school_invite' as any, {
-                p_token: token,
-                p_user_id: user.id
-            });
+            // Get user's access token
+            const { data: sessionData } = await supabase.auth.getSession();
+            const accessToken = sessionData.session?.access_token;
 
-            if (acceptError) {
-                // Check for "Zombie Session" (Client has cookie, but DB deleted user)
-                if (acceptError.message.includes('User not found') || acceptError.message.includes('User ID missing')) {
-                    console.warn('Stale session detected. Signing out...');
-                    await supabase.auth.signOut();
-                    // Force reload to clear state and show login form
-                    window.location.reload();
-                    return;
-                }
-
-                setError(acceptError.message || 'Failed to accept invite');
+            if (!accessToken) {
+                setError('Session expired. Please log in again.');
+                setErrorStatus('NOT_AUTHENTICATED');
                 setIsAccepting(false);
                 return;
             }
 
-            setSuccess(true);
+            // Call edge function
+            const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/accept-staff-invite`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${accessToken}`,
+                    },
+                    body: JSON.stringify({
+                        token: inviteToken,
+                        code: securityCode.toUpperCase(),
+                    }),
+                }
+            );
 
-            // Redirect to role-specific page after 2 seconds
-            setTimeout(() => {
-                const defaultRoute = getDefaultRoute(invite?.role || null);
-                navigate(defaultRoute);
-            }, 2000);
-        } catch (err: any) {
-            console.error('Accept error:', err);
-            // Handle unexpected errors similarly if they look like auth issues
-            if (err.message && (err.message.includes('User not found') || err.message.includes('auth'))) {
-                await supabase.auth.signOut();
-                window.location.reload();
-                return;
+            const result: AcceptInviteResponse = await response.json();
+
+            if (result.status === 'SUCCESS') {
+                setSuccess(true);
+                setAcceptedRole(result.role || null);
+                setAcceptedSchoolId(result.school_id || null);
+
+                // Redirect after brief delay
+                setTimeout(() => {
+                    const redirectPath = getRedirectPath(result.role, result.school_id);
+                    navigate(redirectPath);
+                }, 2000);
+            } else {
+                // Handle specific error statuses
+                setErrorStatus(result.status);
+                setError(getErrorMessage(result.status, result.message));
+                setIsAccepting(false);
             }
-            setError('Failed to accept invite');
+        } catch (err) {
+            console.error('Accept error:', err);
+            setError('Failed to accept invite. Please try again.');
             setIsAccepting(false);
         }
     };
 
-    // Get role display info
+    // =============================================
+    // Helper Functions
+    // =============================================
+
+    const getRedirectPath = (role?: UserRole, schoolId?: string): string => {
+        if (!schoolId) return '/dashboard';
+
+        switch (role) {
+            case 'teacher':
+                return `/school/${schoolId}/attendance`;
+            case 'accountant':
+            case 'cashier':
+                return `/school/${schoolId}/finance`;
+            case 'principal':
+                return `/school/${schoolId}/dashboard`;
+            default:
+                return `/school/${schoolId}/dashboard`;
+        }
+    };
+
+    const getErrorMessage = (status: AcceptStatus, message?: string): string => {
+        switch (status) {
+            case 'INVALID_TOKEN':
+                return 'This invite link is invalid or does not exist.';
+            case 'INVALID_CODE':
+                return 'The security code is incorrect. Please check and try again.';
+            case 'EXPIRED':
+                return 'This invite has expired. Please request a new one from your administrator.';
+            case 'ALREADY_ACCEPTED':
+                return 'This invite has already been used.';
+            case 'NOT_AUTHENTICATED':
+                return 'Please log in to accept this invite.';
+            default:
+                return message || 'An error occurred. Please try again.';
+        }
+    };
+
     const getRoleInfo = (role: UserRole) => {
         switch (role) {
             case 'principal':
@@ -160,103 +237,9 @@ export default function AcceptInvite() {
         }
     };
 
-    // Handle Join with Code (Auto Signup/Login)
-    const handleJoinWithCode = async (code: string) => {
-        if (!invite || !token) return;
-
-        setIsAccepting(true);
-        setError(null);
-
-        // Define userId in outer scope for catch block access
-        let userId: string | undefined;
-
-        try {
-            // 1. Force cleanup of any stale sessions first
-            const { error: signOutError } = await supabase.auth.signOut();
-            if (signOutError) console.warn('Sign out warn:', signOutError);
-
-            // 2. Try to Login first (case: user exists)
-            console.log('Attempting login with code...');
-            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-                email: invite.email,
-                password: code
-            });
-
-            if (!signInError && signInData.user) {
-                console.log('Login successful', signInData.user.id);
-                userId = signInData.user.id;
-            } else {
-                console.log('Login failed', signInError?.message);
-
-                // 2b. Try Sign Up (case: new user)
-                console.log('Attempting signup...');
-                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-                    email: invite.email,
-                    password: code,
-                    options: {
-                        data: { full_name: invite.role }
-                    }
-                });
-
-                if (signUpError) {
-                    console.error('Signup failed:', signUpError);
-                    if (signUpError.message.includes('already registered')) {
-                        throw new Error('Invalid Security Code. If you already have an account, please check the code.');
-                    }
-                    throw new Error(signUpError.message || 'Failed to create account or log in.');
-                }
-
-                if (signUpData.user) {
-                    console.log('Signup successful', signUpData.user.id);
-                    userId = signUpData.user.id;
-                }
-            }
-
-            // 3. Authenticated! Now accept invite
-            // We must have a userId by now.
-            if (!userId) {
-                // Try one last fetch
-                const { data } = await supabase.auth.getUser();
-                userId = data.user?.id;
-            }
-
-            if (!userId) {
-                // This is the critical check. If we are here, Auth failed silently.
-                throw new Error('Authentication Internal Error: Failed to obtain User ID after login/signup.');
-            }
-
-            console.log('Authenticated. Accepting invite...', userId);
-
-            // 4. Call RPC with explicit ID
-            const { error: acceptError } = await supabase.rpc('accept_school_invite' as any, {
-                p_token: token,
-                p_user_id: userId
-            });
-
-            if (acceptError) throw acceptError;
-
-            // Explicitly set success to update UI
-            setSuccess(true);
-            setError(null);
-
-            // Note: navigate will happen in setTimeout below
-        } catch (err: any) {
-            console.error('Join error:', err);
-
-            // Handle Zombie Sessions in Join Flow too
-            if (err.message && (err.message.includes('User not found') || err.message.includes('User ID missing') || err.message.includes('auth'))) {
-                console.warn('Zombie session detected in Join flow.');
-                // Do NOT reload automatically. Show error and let user decide.
-                // We display the userId captured from our local scope variable
-                setError(`System Error: The account created (ID: ${userId}) cannot be found by the database. User ID from Auth: ${userId || 'undefined'}. Error: ${err.message}`);
-                setIsAccepting(false);
-                return;
-            }
-
-            setError(err.message || 'Invalid Security Code. Please check and try again.');
-            setIsAccepting(false);
-        }
-    };
+    // =============================================
+    // Render States
+    // =============================================
 
     // Loading state
     if (isLoading || authLoading) {
@@ -270,7 +253,7 @@ export default function AcceptInvite() {
         );
     }
 
-    // Error state
+    // Error state (no invite found)
     if (error && !invite) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5 p-4">
@@ -292,7 +275,7 @@ export default function AcceptInvite() {
 
     // Success state
     if (success) {
-        const roleInfo = getRoleInfo(invite?.role || 'teacher');
+        const roleInfo = getRoleInfo(acceptedRole || 'teacher');
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/10 p-4">
                 <Card className="max-w-md w-full">
@@ -347,45 +330,71 @@ export default function AcceptInvite() {
                         </div>
                     </div>
 
+                    {/* Error Alert */}
                     {error && (
-                        <Alert variant="destructive">
-                            <AlertTitle>Error</AlertTitle>
-                            <AlertDescription className="flex flex-col gap-2">
-                                <span>{error}</span>
-                                {(error.includes('System Error') || error.includes('User not found')) && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={async () => {
-                                            await supabase.auth.signOut();
-                                            window.location.reload();
-                                        }}
-                                        className="w-full mt-2 bg-white text-destructive hover:bg-gray-100"
-                                    >
-                                        Reset Session & Try Again
-                                    </Button>
-                                )}
-                            </AlertDescription>
+                        <Alert variant={errorStatus === 'INVALID_CODE' ? 'default' : 'destructive'}>
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertTitle>
+                                {errorStatus === 'INVALID_CODE' ? 'Incorrect Code' : 'Error'}
+                            </AlertTitle>
+                            <AlertDescription>{error}</AlertDescription>
                         </Alert>
                     )}
 
-                    {/* Action Buttons */}
-                    {user ? (
-                        // User is logged in - show accept button
-                        <div className="space-y-3">
-                            <p className="text-center text-sm text-muted-foreground">
-                                Logged in as <strong>{user.email}</strong>
-                            </p>
+                    {/* User not logged in */}
+                    {!user ? (
+                        <div className="space-y-4">
+                            <Alert>
+                                <Shield className="h-4 w-4" />
+                                <AlertTitle>Authentication Required</AlertTitle>
+                                <AlertDescription>
+                                    Please log in or create an account to accept this invitation.
+                                </AlertDescription>
+                            </Alert>
+                            <div className="flex gap-2">
+                                <Link to={`/auth?redirect=/invite/${inviteToken}`} className="flex-1">
+                                    <Button className="w-full">
+                                        <LogIn className="mr-2 h-4 w-4" />
+                                        Log In
+                                    </Button>
+                                </Link>
+                            </div>
+                        </div>
+                    ) : (
+                        /* User is logged in - show security code form */
+                        <form onSubmit={handleAcceptInvite} className="space-y-4">
+                            <Alert>
+                                <Shield className="h-4 w-4" />
+                                <AlertTitle>Enter Security Code</AlertTitle>
+                                <AlertDescription>
+                                    Enter the 6-character code provided by your administrator.
+                                </AlertDescription>
+                            </Alert>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="securityCode">Security Code</Label>
+                                <Input
+                                    id="securityCode"
+                                    value={securityCode}
+                                    onChange={(e) => setSecurityCode(e.target.value.toUpperCase().slice(0, 6))}
+                                    placeholder="e.g. A1B2C3"
+                                    className="text-center font-mono text-lg tracking-widest uppercase"
+                                    maxLength={6}
+                                    required
+                                    autoComplete="off"
+                                />
+                            </div>
+
                             <Button
+                                type="submit"
                                 className="w-full"
                                 size="lg"
-                                onClick={handleAccept}
-                                disabled={isAccepting}
+                                disabled={isAccepting || securityCode.length !== 6}
                             >
                                 {isAccepting ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Accepting...
+                                        Verifying...
                                     </>
                                 ) : (
                                     <>
@@ -394,67 +403,11 @@ export default function AcceptInvite() {
                                     </>
                                 )}
                             </Button>
+
                             <p className="text-center text-xs text-muted-foreground">
-                                By accepting, you'll join {invite?.school_name} as {roleInfo?.label}
+                                Logged in as <strong>{user.email}</strong>
                             </p>
-                        </div>
-                    ) : (
-                        // User is not logged in - Security Code Flow
-                        <div className="space-y-4">
-                            <Alert>
-                                <Shield className="h-4 w-4" />
-                                <AlertTitle>Setup Your Account</AlertTitle>
-                                <AlertDescription>
-                                    Enter the 6-character security code provided by your administrator to join.
-                                </AlertDescription>
-                            </Alert>
-
-                            <div className="space-y-3">
-                                <form onSubmit={(e) => {
-                                    e.preventDefault();
-                                    handleJoinWithCode(new FormData(e.currentTarget).get('code') as string);
-                                }} className="space-y-3">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="code">Security Code</Label>
-                                        <Input
-                                            id="code"
-                                            name="code"
-                                            placeholder="e.g. A1B2C3"
-                                            className="text-center font-mono text-lg tracking-widest uppercase"
-                                            maxLength={6}
-                                            required
-                                        />
-                                    </div>
-                                    <Button
-                                        type="submit"
-                                        className="w-full"
-                                        disabled={isAccepting}
-                                    >
-                                        {isAccepting ? (
-                                            <>
-                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                Verifying...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <LogIn className="mr-2 h-4 w-4" />
-                                                Join School
-                                            </>
-                                        )}
-                                    </Button>
-                                </form>
-
-                                <p className="text-center text-xs text-muted-foreground">
-                                    This code serves as your initial password.
-                                </p>
-
-                                <div className="text-center border-t pt-2">
-                                    <Link to="/auth" className="text-xs text-primary hover:underline">
-                                        Already have an account? Log in here
-                                    </Link>
-                                </div>
-                            </div>
-                        </div>
+                        </form>
                     )}
                 </CardContent>
             </Card>
