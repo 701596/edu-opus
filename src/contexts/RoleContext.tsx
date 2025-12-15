@@ -89,7 +89,15 @@ export function RoleProvider({ children }: RoleProviderProps) {
                 if (schools.length > 0 && !currentSchool) {
                     const saved = localStorage.getItem('currentSchoolId');
                     const savedSchool = schools.find((s: SchoolMembership) => s.school_id === saved);
-                    const targetSchool = savedSchool || schools[0];
+
+                    // Prioritize principal role for default selection
+                    // If no saved school, or if saved school is not found in current list,
+                    // try to find a school where the user is a principal.
+                    const principalSchool = schools.find((s: SchoolMembership) => s.role === 'principal');
+
+                    // Priority: Saved > Principal > First in list
+                    const targetSchool = savedSchool || principalSchool || schools[0];
+
                     setCurrentSchoolState(targetSchool);
 
                     // Log login (once per session per school)
@@ -116,6 +124,22 @@ export function RoleProvider({ children }: RoleProviderProps) {
             fetchMemberships();
         }
     }, [user, authLoading]);
+
+    // Heartbeat: Update last_active_at every 2 minutes
+    useEffect(() => {
+        if (!user) return;
+
+        const sendHeartbeat = async () => {
+            await supabase.rpc('update_heartbeat' as any);
+        };
+
+        // Initial beat
+        sendHeartbeat();
+
+        // Interval
+        const interval = setInterval(sendHeartbeat, 2 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [user]);
 
     // Set current school
     const setCurrentSchool = (school: SchoolMembership) => {

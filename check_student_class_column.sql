@@ -1,0 +1,6 @@
+-- CHECK IF LINK IS BY NAME
+SELECT class, COUNT(*) 
+FROM students 
+WHERE class IS NOT NULL 
+GROUP BY class 
+LIMIT 10;

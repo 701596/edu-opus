@@ -41,6 +41,9 @@ type Staff = z.infer<typeof staffSchema> & {
   salary: number;
   salary_type: string;
   position: string;
+  last_active_at?: string;
+  invite_used_code?: string;
+  invite_used_type?: string;
 };
 
 const Staff = () => {
@@ -141,7 +144,40 @@ const Staff = () => {
 
       const { data, error } = await query;
       if (error) throw error;
-      setStaff((data || []) as Staff[]);
+
+      // Fetch activity data
+      // We assume the user has a school_id in context, but since we are fetching staff, 
+      // let's try to get the current school using a known method or pass it?
+      // Actually, standard pattern in this app seems to be assuming RLS handles 'my school'.
+      // But get_school_activity requires p_school_id. 
+      // We'll fetch the user's current school ID via auth or query.
+      // Better yet, let's fetch basic 'invitation info' via a generic RPC that uses auth.uid() context if needed,
+      // but get_school_activity is safer.
+      // For now, let's fetch the schools members for the current user's school.
+      // Since we don't have 'currentSchoolId' easily here without context, checking local storage or auth.
+
+      const currentSchoolId = localStorage.getItem('currentSchoolId');
+      let activityMap: Record<string, any> = {};
+
+      if (currentSchoolId) {
+        const { data: activityData } = await supabase.rpc('get_school_activity', { p_school_id: currentSchoolId });
+        if (activityData) {
+          // RPC returns JSONB, so cast it
+          const rows = activityData as any[];
+          rows.forEach((item: any) => {
+            if (item.email) activityMap[item.email] = item;
+          });
+        }
+      }
+
+      const mergedData = (data || []).map((s: any) => ({
+        ...s,
+        last_active_at: activityMap[s.email]?.last_active_at || null,
+        invite_used_code: activityMap[s.email]?.invite_used_code || null,
+        invite_used_type: activityMap[s.email]?.invite_used_type || null
+      }));
+
+      setStaff(mergedData as Staff[]);
     } catch (error) {
       console.error('Error fetching staff:', error);
       toast({ title: 'Error', description: 'Failed to fetch staff', variant: 'destructive' });
@@ -506,51 +542,71 @@ const Staff = () => {
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Contact</TableHead>
-                  <TableHead>Salary</TableHead>
+                  <TableHead>Salary Amount</TableHead>
                   <TableHead>Salary Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Joined Via</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {staff.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       {debouncedSearch ? 'No staff members match your search' : 'No staff members found'}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  staff.map((staffMember) => (
-                    <TableRow key={staffMember.id}>
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedStaff.has(staffMember.id)}
-                          onCheckedChange={() => toggleStaffSelection(staffMember.id)}
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium">{staffMember.name}</TableCell>
-                      <TableCell>{staffMember.position}</TableCell>
-                      <TableCell>{staffMember.phone || '-'}</TableCell>
-                      <TableCell className="font-semibold text-primary">
-                        {formatAmount(Number(staffMember.salary))}
-                      </TableCell>
-                      <TableCell className="capitalize">{staffMember.salary_type}</TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleEdit(staffMember)}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(staffMember.id)}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  staff.map((staffMember) => {
+                    // Determine status
+                    const now = new Date();
+                    const lastActive = staffMember.last_active_at ? new Date(staffMember.last_active_at) : null;
+                    const isOnline = lastActive && (now.getTime() - lastActive.getTime() < 5 * 60 * 1000); // 5 mins threshold
+
+                    return (
+                      <TableRow key={staffMember.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedStaff.has(staffMember.id)}
+                            onCheckedChange={() => toggleStaffSelection(staffMember.id)}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">{staffMember.name}</TableCell>
+                        <TableCell>{staffMember.position}</TableCell>
+                        <TableCell>{staffMember.phone || '-'}</TableCell>
+                        <TableCell className="font-semibold text-primary">
+                          {formatAmount(Number(staffMember.salary))}
+                        </TableCell>
+                        <TableCell className="capitalize">{staffMember.salary_type}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                            <span className="text-sm text-muted-foreground">
+                              {isOnline ? 'Online' : 'Offline'}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {staffMember.invite_used_code || '-'}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex space-x-2">
+                            <Button variant="outline" size="sm" onClick={() => handleEdit(staffMember)}>
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(staffMember.id)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

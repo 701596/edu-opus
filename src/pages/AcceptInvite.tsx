@@ -144,23 +144,20 @@ export default function AcceptInvite() {
                 return;
             }
 
-            // Call edge function
-            const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/accept-staff-invite`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`,
-                    },
-                    body: JSON.stringify({
-                        token: inviteToken,
-                        code: securityCode.toUpperCase(),
-                    }),
-                }
-            );
+            // Call secure RPC directly
+            const { data, error } = await (supabase.rpc as Function)('accept_invite_by_code', {
+                p_token: inviteToken,
+                p_code: securityCode.toUpperCase(),
+            });
 
-            const result: AcceptInviteResponse = await response.json();
+            if (error) {
+                console.error('Accept error:', error);
+                setError(error.message || 'Failed to accept invite');
+                setIsAccepting(false);
+                return;
+            }
+
+            const result = data as AcceptInviteResponse;
 
             if (result.status === 'SUCCESS') {
                 setSuccess(true);

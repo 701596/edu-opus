@@ -13,6 +13,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import Staff from "./pages/Staff";
+import Join from "./pages/Join";
 import Payments from "./pages/Payments";
 import Expenses from "./pages/Expenses";
 import Reports from "./pages/Reports";
@@ -20,8 +21,8 @@ import RemainingFees from "./pages/RemainingFees";
 import RateLimitAdmin from "./pages/RateLimitAdmin";
 import Attendance from "./pages/Attendance";
 import AdminInvites from "./pages/AdminInvites";
-import AcceptInvite from "./pages/AcceptInvite";
-import JoinStaff from "./pages/JoinStaff";
+import SuperAI from "./pages/SuperAI";
+import { InviteProcessor } from "./components/InviteProcessor";
 
 import NotFound from "./pages/NotFound";
 
@@ -36,14 +37,13 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <InviteProcessor />
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/auth" element={<Auth />} />
 
-                {/* Invite Acceptance (public routes) */}
-                <Route path="/invite/:token" element={<AcceptInvite />} />
-                <Route path="/accept-invite" element={<AcceptInvite />} />
-                <Route path="/join" element={<JoinStaff />} />
+                {/* Unified Join Page */}
+                <Route path="/join" element={<Join />} />
 
 
 
@@ -94,6 +94,13 @@ const App = () => (
                   <ProtectedRoute>
                     <Layout><Attendance /></Layout>
                   </ProtectedRoute>
+                } />
+
+                {/* AI Assistant - Principal Only */}
+                <Route path="/super-ai" element={
+                  <PrincipalRoute>
+                    <SuperAI />
+                  </PrincipalRoute>
                 } />
 
                 {/* Admin Routes */}

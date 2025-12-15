@@ -1,612 +1,330 @@
-/**
- * Admin Invite Panel
- * 
- * Principal-only interface for inviting and managing staff members.
- * Uses secure edge functions for all invite operations.
- */
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Loader2, Copy, Check, Mail, Key } from "lucide-react";
+import { useRole } from "@/contexts/RoleContext";
 
-import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import {
-    UserPlus,
-    Mail,
-    Copy,
-    Loader2,
-    Users,
-    Trash2,
-    Clock,
-    AlertTriangle,
-    Activity,
-    CheckCircle,
-    XCircle,
-} from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useRole, UserRole } from '@/contexts/RoleContext';
-import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
-import { useAuth } from '@/hooks/useAuth';
+const AdminInvites = () => {
+    const { currentSchool } = useRole();
+    const schoolId = currentSchool?.school_id;
+    const [loading, setLoading] = useState(false);
 
-// =============================================
-// Types
-// =============================================
+    // Active Staff State
+    const [activeStaff, setActiveStaff] = useState<any[]>([]);
+    const [loadingStaff, setLoadingStaff] = useState(false);
 
-type InviteStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
-
-interface SchoolMember {
-    member_id: string;
-    user_id: string;
-    role: UserRole;
-    is_active: boolean;
-    joined_at: string;
-    email?: string;
-}
-
-interface SchoolInvite {
-    id: string;
-    email: string;
-    role: UserRole;
-    status: InviteStatus;
-    expires_at: string;
-    created_at: string;
-    accepted_at: string | null;
-    accepted_by: string | null;
-}
-
-interface LoginLog {
-    id: string;
-    email: string;
-    role: string;
-    created_at: string;
-}
-
-interface CreateInviteResult {
-    status: string;
-    invite_id?: string;
-    token?: string;
-    security_code?: string;
-    link?: string;
-    expires_at?: string;
-    message?: string;
-}
-
-// =============================================
-// Component
-// =============================================
-
-export default function AdminInvites() {
-    const { user } = useAuth();
-    const { currentSchool, isPrincipal } = useRole();
-    const { toast } = useToast();
-
-    const [members, setMembers] = useState<SchoolMember[]>([]);
-    const [invites, setInvites] = useState<SchoolInvite[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [inviteEmail, setInviteEmail] = useState('');
-    const [inviteRole, setInviteRole] = useState<UserRole>('teacher');
-    const [isInviting, setIsInviting] = useState(false);
-    const [inviteResult, setInviteResult] = useState<CreateInviteResult | null>(null);
-    const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
-    const [activeTab, setActiveTab] = useState('activity');
-    const [dialogOpen, setDialogOpen] = useState(false);
-
-    // =============================================
-    // Data Fetching
-    // =============================================
-
-    const fetchData = useCallback(async () => {
-        if (!currentSchool) return;
-
+    // Fetch Active Staff
+    const fetchActiveStaff = async () => {
+        if (!schoolId) return;
+        setLoadingStaff(true);
         try {
-            // Fetch members
-            const { data: membersData, error: membersError } = await (supabase.rpc as Function)(
-                'get_school_members_extended',
-                { p_school_id: currentSchool.school_id }
-            );
-
-            if (membersError) {
-                console.error('Members fetch error:', membersError);
-            }
-
-            // Fetch invites using secure RPC
-            const { data: invitesData, error: invitesError } = await (supabase.rpc as Function)(
-                'get_school_invites_secure',
-                { p_school_id: currentSchool.school_id }
-            );
-
-            if (invitesError) {
-                console.error('Invites fetch error:', invitesError);
-            }
-
-            // Fetch login logs
-            const { data: logsData } = await (supabase as unknown as { from: (table: string) => { select: (cols: string) => { eq: (col: string, val: string) => { order: (col: string, opts: { ascending: boolean }) => { limit: (n: number) => Promise<{ data: LoginLog[] | null }> } } } } })
-                .from('login_logs')
-                .select('*')
-                .eq('school_id', currentSchool.school_id)
-                .order('created_at', { ascending: false })
-                .limit(20);
-
-            setMembers((membersData as SchoolMember[]) || []);
-            setInvites((invitesData as SchoolInvite[]) || []);
-            setLoginLogs(logsData || []);
-        } catch (error) {
-            console.error('Data fetch error:', error);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [currentSchool]);
-
-    useEffect(() => {
-        fetchData();
-
-        // Realtime subscription for invites
-        if (currentSchool) {
-            const channel = supabase
-                .channel('admin_invites_changes')
-                .on(
-                    'postgres_changes',
-                    {
-                        event: '*',
-                        schema: 'public',
-                        table: 'school_invites',
-                        filter: `school_id=eq.${currentSchool.school_id}`,
-                    },
-                    () => {
-                        fetchData();
-                    }
-                )
-                .subscribe();
-
-            return () => {
-                supabase.removeChannel(channel);
-            };
-        }
-    }, [currentSchool, fetchData]);
-
-    // =============================================
-    // Send Invite
-    // =============================================
-
-    const sendInvite = async () => {
-        if (!inviteEmail || !currentSchool) return;
-
-        setIsInviting(true);
-        setInviteResult(null);
-
-        try {
-            // Get session for auth header
-            const { data: sessionData } = await supabase.auth.getSession();
-            const accessToken = sessionData.session?.access_token;
-
-            if (!accessToken) {
-                toast({ title: 'Session expired', variant: 'destructive' });
-                setIsInviting(false);
-                return;
-            }
-
-            // Call edge function
-            const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-invite`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${accessToken}`,
-                    },
-                    body: JSON.stringify({
-                        school_id: currentSchool.school_id,
-                        email: inviteEmail,
-                        role: inviteRole,
-                        expires_in_hours: 168, // 7 days
-                    }),
-                }
-            );
-
-            const result: CreateInviteResult = await response.json();
-
-            if (result.status === 'SUCCESS') {
-                setInviteResult(result);
-                toast({
-                    title: 'Invite Created',
-                    description: `Invitation sent to ${inviteEmail}`,
-                });
-                setInviteEmail('');
-                fetchData();
-            } else {
-                toast({
-                    title: 'Invite Failed',
-                    description: result.message || 'Failed to create invite',
-                    variant: 'destructive',
-                });
-            }
-        } catch (error) {
-            console.error('Invite error:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to create invite',
-                variant: 'destructive',
+            const { data, error } = await supabase.rpc('get_school_activity', {
+                p_school_id: schoolId
             });
+            if (error) throw error;
+            setActiveStaff(data || []);
+        } catch (error: any) {
+            console.error(error);
+            toast.error("Failed to load active staff");
         } finally {
-            setIsInviting(false);
+            setLoadingStaff(false);
         }
     };
 
-    // =============================================
-    // Revoke Invite
-    // =============================================
 
-    const revokeInvite = async (inviteId: string) => {
-        const { data, error } = await (supabase.rpc as Function)('revoke_invite_secure', {
-            p_invite_id: inviteId,
-        });
+    // Email Invite State
+    const [email, setEmail] = useState("");
+    const [emailRole, setEmailRole] = useState("teacher");
+    const [generatedLink, setGeneratedLink] = useState("");
 
-        const result = data as { status: string } | null;
+    // Code Invite State
+    const [codeRole, setCodeRole] = useState("teacher");
+    const [generatedCode, setGeneratedCode] = useState("");
 
-        if (error || result?.status !== 'SUCCESS') {
-            toast({ title: 'Failed to revoke', variant: 'destructive' });
-        } else {
-            setInvites(prev => prev.map(i =>
-                i.id === inviteId ? { ...i, status: 'revoked' as InviteStatus } : i
-            ));
-            toast({ title: 'Invite revoked' });
+    const handleCopy = async (text: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            toast.success("Copied to clipboard!");
+        } catch (err) {
+            toast.error("Failed to copy");
         }
     };
 
-    // =============================================
-    // Copy Helpers
-    // =============================================
+    const createEmailInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!schoolId) return toast.error("No school selected");
 
-    const copyToClipboard = (text: string, label: string) => {
-        navigator.clipboard.writeText(text);
-        toast({ title: `${label} copied!` });
+        setLoading(true);
+        setGeneratedLink("");
+
+        try {
+            const { data, error } = await supabase.rpc('create_email_invite', {
+                p_email: email,
+                p_role: emailRole as any,
+                p_school_id: schoolId
+            });
+
+            if (error) throw error;
+
+            const result = data as any;
+            const link = `${window.location.origin}${result.link}`;
+            setGeneratedLink(link);
+            toast.success("Invitation link generated!");
+
+        } catch (error: any) {
+            toast.error(error.message);
+        } finally {
+            setLoading(false);
+        }
     };
 
-    // =============================================
-    // Role Badge
-    // =============================================
+    const createCodeInvite = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!schoolId) return toast.error("No school selected");
 
-    const getRoleBadge = (role: UserRole) => {
-        const colors: Record<UserRole, string> = {
-            principal: 'bg-purple-500',
-            accountant: 'bg-blue-500',
-            cashier: 'bg-green-500',
-            teacher: 'bg-orange-500',
-        };
-        return <Badge className={colors[role]}>{role}</Badge>;
+        setLoading(true);
+        setGeneratedCode("");
+
+        try {
+            const { data, error } = await supabase.rpc('create_code_invite', {
+                p_role: codeRole as any,
+                p_school_id: schoolId
+            });
+
+            if (error) throw error;
+
+            const result = data as any;
+            setGeneratedCode(result.code);
+            toast.success("Invitation code generated!");
+
+        } catch (error: any) {
+            toast.error(error.message);
+        } finally {
+            setLoading(false);
+        }
     };
-
-    const getStatusBadge = (status: InviteStatus) => {
-        const config: Record<InviteStatus, { color: string; icon: React.ReactNode }> = {
-            pending: { color: 'bg-yellow-500', icon: <Clock className="h-3 w-3" /> },
-            accepted: { color: 'bg-green-500', icon: <CheckCircle className="h-3 w-3" /> },
-            revoked: { color: 'bg-red-500', icon: <XCircle className="h-3 w-3" /> },
-            expired: { color: 'bg-gray-500', icon: <AlertTriangle className="h-3 w-3" /> },
-        };
-        const { color, icon } = config[status];
-        return (
-            <Badge className={`${color} flex items-center gap-1`}>
-                {icon}
-                {status}
-            </Badge>
-        );
-    };
-
-    // =============================================
-    // Render Guards
-    // =============================================
-
-    if (!currentSchool) {
-        return <div className="p-8 text-center text-muted-foreground">Loading school data...</div>;
-    }
-
-    if (!isPrincipal) {
-        return (
-            <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Access Denied</AlertTitle>
-                <AlertDescription>Only principals can manage team members.</AlertDescription>
-            </Alert>
-        );
-    }
-
-    // =============================================
-    // Main Render
-    // =============================================
 
     return (
-        <div className="container mx-auto py-6 px-4 space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold">Team Management</h1>
-                    <p className="text-muted-foreground">Invite and manage staff members</p>
-                </div>
-
-                {/* Invite Dialog */}
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                    <DialogTrigger asChild>
-                        <Button onClick={() => { setInviteResult(null); setDialogOpen(true); }}>
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Invite Member
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>Invite Team Member</DialogTitle>
-                            <DialogDescription>
-                                Send an invitation to join your school.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-4 pt-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="email">Email Address</Label>
-                                <Input
-                                    id="email"
-                                    type="email"
-                                    placeholder="colleague@school.edu"
-                                    value={inviteEmail}
-                                    onChange={(e) => setInviteEmail(e.target.value)}
-                                    disabled={isInviting}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="role">Role</Label>
-                                {/* Role selector - using user_role enum values */}
-                                <Select
-                                    value={inviteRole}
-                                    onValueChange={(v) => setInviteRole(v as UserRole)}
-                                    disabled={isInviting}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="accountant">Accountant (Finance)</SelectItem>
-                                        <SelectItem value="cashier">Cashier (Fee Collection)</SelectItem>
-                                        <SelectItem value="teacher">Teacher (Attendance)</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <Button
-                                onClick={sendInvite}
-                                disabled={!inviteEmail || isInviting}
-                                className="w-full"
-                            >
-                                {isInviting ? (
-                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                ) : (
-                                    <Mail className="h-4 w-4 mr-2" />
-                                )}
-                                Send Invite
-                            </Button>
-
-                            {/* Invite Result - TESTING ONLY */}
-                            {/* TODO: Remove this section for production - send code via email instead */}
-                            {inviteResult && inviteResult.status === 'SUCCESS' && (
-                                <div className="mt-4 space-y-4">
-                                    <div className="p-3 bg-muted rounded-md space-y-2">
-                                        <Label className="text-sm font-semibold">1. Share this Link</Label>
-                                        <div className="flex items-center gap-2">
-                                            <Input value={inviteResult.link || ''} readOnly className="text-xs" />
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => copyToClipboard(inviteResult.link || '', 'Link')}
-                                            >
-                                                <Copy className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-
-                                    <div className="p-3 bg-primary/10 border border-primary/20 rounded-md space-y-2">
-                                        <Label className="text-sm font-semibold text-primary">
-                                            2. Share this Security Code
-                                        </Label>
-                                        <div className="flex items-center gap-2">
-                                            <div className="bg-background border rounded px-3 py-2 font-mono text-lg tracking-widest font-bold flex-1 text-center">
-                                                {inviteResult.security_code}
-                                            </div>
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => copyToClipboard(inviteResult.security_code || '', 'Code')}
-                                            >
-                                                <Copy className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            They will need this code to accept the invite.
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </DialogContent>
-                </Dialog>
+        <div className="container mx-auto p-6 max-w-4xl space-y-8">
+            <div>
+                <h1 className="text-3xl font-bold tracking-tight">Staff Invitations</h1>
+                <p className="text-muted-foreground mt-2">
+                    Invite teachers and staff members to join your school.
+                </p>
             </div>
 
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-3 max-w-[400px]">
-                    <TabsTrigger value="activity">
-                        <Activity className="mr-2 h-4 w-4" />
-                        Activity
+            <Tabs defaultValue="email" className="w-full" onValueChange={(val) => {
+                if (val === 'active') fetchActiveStaff();
+            }}>
+                <TabsList className="grid w-full grid-cols-3 lg:w-[600px]">
+                    <TabsTrigger value="email">
+                        <Mail className="w-4 h-4 mr-2" />
+                        Email Invite
                     </TabsTrigger>
-                    <TabsTrigger value="members">
-                        <Users className="mr-2 h-4 w-4" />
-                        Members ({members.length})
+                    <TabsTrigger value="code">
+                        <Key className="w-4 h-4 mr-2" />
+                        Manual Code
                     </TabsTrigger>
-                    <TabsTrigger value="invites">
-                        <Clock className="mr-2 h-4 w-4" />
-                        Invites ({invites.filter(i => i.status === 'pending').length})
+                    <TabsTrigger value="active">
+                        <div className="flex items-center gap-2">
+                            <span>Active Staff</span>
+                        </div>
                     </TabsTrigger>
                 </TabsList>
 
-                {/* Members Tab */}
-                <TabsContent value="members" className="space-y-4">
+                {/* Email Invite Tab */}
+                <TabsContent value="email" className="mt-6">
                     <Card>
                         <CardHeader>
-                            <CardTitle>Current Team</CardTitle>
-                            <CardDescription>Active members of your school.</CardDescription>
+                            <CardTitle>Send Email Invitation</CardTitle>
+                            <CardDescription>
+                                Generate a secure link for a staff member. The link expires in 24 hours.
+                            </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            {isLoading ? (
+                            <form onSubmit={createEmailInvite} className="space-y-4">
+                                <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="space-y-2">
+                                        <Label htmlFor="email">Staff Email</Label>
+                                        <Input
+                                            id="email"
+                                            type="email"
+                                            placeholder="teacher@school.edu"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label htmlFor="role">Role</Label>
+                                        <Select value={emailRole} onValueChange={setEmailRole}>
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="teacher">Teacher</SelectItem>
+                                                <SelectItem value="accountant">Accountant</SelectItem>
+                                                <SelectItem value="cashier">Cashier</SelectItem>
+                                                <SelectItem value="principal">Principal</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+
+                                {generatedLink ? (
+                                    <div className="p-4 bg-muted/50 rounded-lg border space-y-2 animate-in fade-in">
+                                        <Label className="text-xs text-muted-foreground uppercase opacity-70">Invitation Link</Label>
+                                        <div className="flex items-center gap-2">
+                                            <code className="flex-1 p-2 bg-background rounded border text-sm break-all">
+                                                {generatedLink}
+                                            </code>
+                                            <Button type="button" size="icon" variant="outline" onClick={() => handleCopy(generatedLink)}>
+                                                <Copy className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                        <p className="text-xs text-green-600 flex items-center mt-2">
+                                            <Check className="w-3 h-3 mr-1" />
+                                            Ready to share
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <Button type="submit" disabled={loading}>
+                                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Generate Link"}
+                                    </Button>
+                                )}
+                            </form>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Code Invite Tab */}
+                <TabsContent value="code" className="mt-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Generate Invitation Code</CardTitle>
+                            <CardDescription>
+                                Create a short, one-time code for staff who can't receive emails.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={createCodeInvite} className="space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="code-role">Role</Label>
+                                    <Select value={codeRole} onValueChange={setCodeRole}>
+                                        <SelectTrigger className="w-[200px]">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="teacher">Teacher</SelectItem>
+                                            <SelectItem value="accountant">Accountant</SelectItem>
+                                            <SelectItem value="cashier">Cashier</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                {generatedCode ? (
+                                    <div className="p-6 bg-muted/50 rounded-lg border text-center space-y-4 animate-in fade-in">
+                                        <Label className="text-sm text-muted-foreground uppercase tracking-widest">One-Time Code</Label>
+                                        <div className="text-4xl font-mono font-bold tracking-widest text-primary selection:bg-primary selection:text-primary-foreground">
+                                            {generatedCode}
+                                        </div>
+                                        <Button type="button" variant="outline" size="sm" onClick={() => handleCopy(generatedCode)}>
+                                            <Copy className="h-3 w-3 mr-2" />
+                                            Copy Code
+                                        </Button>
+                                        <p className="text-xs text-muted-foreground">Expires in 24 hours</p>
+                                    </div>
+                                ) : (
+                                    <Button type="submit" disabled={loading}>
+                                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Generate Code"}
+                                    </Button>
+                                )}
+                            </form>
+                        </CardContent>
+                    </Card>
+                </TabsContent>
+
+                {/* Active Staff Tab */}
+                <TabsContent value="active" className="mt-6">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Active Staff Members</CardTitle>
+                            <CardDescription>
+                                View all users with access to your school, their roles, and invite history.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {loadingStaff ? (
                                 <div className="flex justify-center p-8">
-                                    <Loader2 className="h-8 w-8 animate-spin" />
+                                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                                 </div>
                             ) : (
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Member</TableHead>
-                                            <TableHead>Role</TableHead>
-                                            <TableHead>Joined</TableHead>
-                                            <TableHead>Status</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {members.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={4} className="text-center text-muted-foreground p-8">
-                                                    No members found.
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : (
-                                            members.map((member) => (
-                                                <TableRow key={member.member_id}>
-                                                    <TableCell>
-                                                        <span className="font-medium">{member.email || 'Unknown'}</span>
-                                                    </TableCell>
-                                                    <TableCell>{getRoleBadge(member.role)}</TableCell>
-                                                    <TableCell>
-                                                        {format(new Date(member.joined_at), 'MMM d, yyyy')}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant={member.is_active ? 'default' : 'secondary'}>
-                                                            {member.is_active ? 'Active' : 'Inactive'}
-                                                        </Badge>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
-                                        )}
-                                    </TableBody>
-                                </Table>
+                                <div className="rounded-md border">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-muted/50 text-muted-foreground font-medium">
+                                            <tr>
+                                                <th className="p-3">Email</th>
+                                                <th className="p-3">Role</th>
+                                                <th className="p-3">Status</th>
+                                                <th className="p-3">Joined Via</th>
+                                                <th className="p-3">Used Code</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {activeStaff.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                                                        No active staff members found.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                activeStaff.map((staff: any) => {
+                                                    const now = new Date();
+                                                    const lastActive = staff.last_active_at ? new Date(staff.last_active_at) : null;
+                                                    const isOnline = lastActive && (now.getTime() - lastActive.getTime() < 5 * 60 * 1000);
+
+                                                    return (
+                                                        <tr key={staff.email} className="border-t">
+                                                            <td className="p-3 font-medium">{staff.email}</td>
+                                                            <td className="p-3 capitalize">
+                                                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
+                                                                    {staff.role}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                                                    <span className="text-muted-foreground text-xs">
+                                                                        {isOnline ? 'Online' : 'Offline'}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="p-3 capitalize text-muted-foreground">
+                                                                {staff.invite_used_type || 'Direct'}
+                                                            </td>
+                                                            <td className="p-3 font-mono text-xs">
+                                                                {staff.invite_used_code || '-'}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
                             )}
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                {/* Invites Tab */}
-                <TabsContent value="invites" className="space-y-4">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>All Invitations</CardTitle>
-                            <CardDescription>Invitation history for your school.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Email</TableHead>
-                                        <TableHead>Role</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Created</TableHead>
-                                        <TableHead>Expires</TableHead>
-                                        <TableHead>Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {invites.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={6} className="text-center text-muted-foreground">
-                                                No invites found
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        invites.map((invite) => (
-                                            <TableRow key={invite.id}>
-                                                <TableCell>{invite.email}</TableCell>
-                                                <TableCell>{getRoleBadge(invite.role)}</TableCell>
-                                                <TableCell>{getStatusBadge(invite.status)}</TableCell>
-                                                <TableCell>
-                                                    {format(new Date(invite.created_at), 'MMM d, yyyy')}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {format(new Date(invite.expires_at), 'MMM d, HH:mm')}
-                                                </TableCell>
-                                                <TableCell>
-                                                    {invite.status === 'pending' && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="text-destructive hover:text-destructive/90"
-                                                            onClick={() => revokeInvite(invite.id)}
-                                                        >
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    )}
-                                                    {invite.status === 'accepted' && invite.accepted_by && (
-                                                        <span className="text-xs text-green-600">
-                                                            Accepted
-                                                        </span>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                {/* Activity Tab */}
-                <TabsContent value="activity">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Login Activity</CardTitle>
-                            <CardDescription>Recent staff logins.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Role</TableHead>
-                                        <TableHead>User Email</TableHead>
-                                        <TableHead>Time</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {loginLogs.length === 0 ? (
-                                        <TableRow>
-                                            <TableCell colSpan={3} className="text-center text-muted-foreground p-8">
-                                                No recent activity recorded.
-                                            </TableCell>
-                                        </TableRow>
-                                    ) : (
-                                        loginLogs.map((log) => (
-                                            <TableRow key={log.id}>
-                                                <TableCell>{getRoleBadge(log.role as UserRole)}</TableCell>
-                                                <TableCell className="font-mono text-xs">{log.email}</TableCell>
-                                                <TableCell className="text-muted-foreground">
-                                                    {format(new Date(log.created_at), 'MMM d, h:mm a')}
-                                                </TableCell>
-                                            </TableRow>
-                                        ))
-                                    )}
-                                </TableBody>
-                            </Table>
                         </CardContent>
                     </Card>
                 </TabsContent>
             </Tabs>
         </div>
     );
-}
+};
+
+export default AdminInvites;

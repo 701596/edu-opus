@@ -15,6 +15,7 @@ import {
     Settings,
     BookOpen,
     ClipboardList,
+    Sparkles,
     type LucideIcon,
 } from 'lucide-react';
 import { UserRole } from '@/contexts/RoleContext';
@@ -45,6 +46,7 @@ export const NAV_ITEMS: Record<UserRole, NavItem[]> = {
         { path: '/attendance', icon: Calendar, label: 'Attendance' },
         { path: '/reports', icon: BarChart, label: 'Reports' },
         { path: '/remaining-fees', icon: ClipboardList, label: 'Remaining Fees' },
+        { path: '/super-ai', icon: Sparkles, label: 'AI Assistant' },
         { path: '/admin', icon: Settings, label: 'Admin' },
     ],
 
@@ -90,6 +92,7 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
     '/admin/rate-limits': ['principal'],
     '/admin/invites': ['principal'],
     '/admin/audit': ['principal'],
+    '/super-ai': ['principal'],
 };
 
 // =============================================

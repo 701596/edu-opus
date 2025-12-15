@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         email,
         password,
       });
-      
+
       if (error) {
         toast({
           title: "Sign In Failed",
@@ -71,7 +71,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           description: "Successfully signed in.",
         });
       }
-      
+
       return { error };
     } catch (error: any) {
       toast({
@@ -86,7 +86,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const signUp = async (email: string, password: string, name: string) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
-      
+
       const { error } = await supabase.auth.signUp({
         email,
         password,
@@ -97,7 +97,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           }
         }
       });
-      
+
       if (error) {
         toast({
           title: "Sign Up Failed",
@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           description: "Please check your email to verify your account.",
         });
       }
-      
+
       return { error };
     } catch (error: any) {
       toast({
@@ -126,6 +126,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       const { error } = await supabase.auth.signOut();
       if (!error) {
+        // Clear school preference on logout
+        localStorage.removeItem('currentSchoolId');
+
         toast({
           title: "Signed Out",
           description: "You have been successfully signed out.",

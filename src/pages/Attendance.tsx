@@ -4,7 +4,7 @@
  * Mobile-first attendance marking UI for teachers.
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Loader2, Calendar as CalendarIcon, Check, X, Clock, Save, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useRole } from '@/contexts/RoleContext';
@@ -19,30 +20,74 @@ import { format, addDays, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
-// =============================================
-// Types
-// =============================================
+// Helper for sorting classes
+const sortClasses = (a: any, b: any) => {
+    const order = ['Nursery', 'L.K.G.', 'U.K.G.'];
+    const getOrder = (name: string) => {
+        const index = order.findIndex(o => name.includes(o));
+        if (index !== -1) return index;
+        if (name.includes('Grade')) {
+            const num = parseInt(name.replace(/\D/g, ''));
+            return 10 + (isNaN(num) ? 99 : num);
+        }
+        return 100; // Others last
+    };
 
-interface ClassInfo {
-    id: string;
-    name: string;
-    grade: string;
-    student_count?: number;
-}
+    return getOrder(a.name) - getOrder(b.name) || a.name.localeCompare(b.name);
+};
 
-interface StudentAttendance {
-    student_id: string;
-    student_name: string;
-    status: 'present' | 'absent' | 'late' | 'excused' | 'unmarked';
-    notes?: string;
-}
+// Optimized Card Component to prevent full list re-renders
+const StudentAttendanceCard = ({ student, onMark }: { student: StudentAttendance, onMark: (id: string, status: StudentAttendance['status']) => void }) => {
+    return (
+        <Card className={cn(
+            "transition-colors",
+            student.status === 'present' && "border-green-500 bg-green-50 dark:bg-green-950",
+            student.status === 'absent' && "border-red-500 bg-red-50 dark:bg-red-950",
+            student.status === 'late' && "border-yellow-500 bg-yellow-50 dark:bg-yellow-950",
+        )}>
+            <CardContent className="flex items-center justify-between p-4">
+                <div>
+                    <span className="font-medium">{student.student_name}</span>
+                </div>
+                <div className="flex gap-1">
+                    <Button
+                        size="sm"
+                        variant={student.status === 'present' ? 'default' : 'outline'}
+                        className={cn(
+                            student.status === 'present' && "bg-green-600 hover:bg-green-700"
+                        )}
+                        onClick={() => onMark(student.student_id, 'present')}
+                    >
+                        <Check className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant={student.status === 'absent' ? 'destructive' : 'outline'}
+                        onClick={() => onMark(student.student_id, 'absent')}
+                    >
+                        <X className="h-4 w-4" />
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant={student.status === 'late' ? 'secondary' : 'outline'}
+                        onClick={() => onMark(student.student_id, 'late')}
+                    >
+                        <Clock className="h-4 w-4" />
+                    </Button>
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
 
-// =============================================
-// Component
-// =============================================
+// Memoize the component
+// Only re-render if the student object (specifically status) changes
+const MemoizedStudentCard = React.memo(StudentAttendanceCard, (prev, next) => {
+    return prev.student.status === next.student.status && prev.student.student_id === next.student.student_id;
+});
 
 export default function Attendance() {
-    const { currentSchool, isTeacher, isPrincipal } = useRole();
+    const { currentSchool, isTeacher, isPrincipal, isLoading: roleLoading } = useRole();
     const { toast } = useToast();
 
     const [classes, setClasses] = useState<ClassInfo[]>([]);
@@ -53,10 +98,24 @@ export default function Attendance() {
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
 
+    // Pagination State
+    const [page, setPage] = useState(1);
+    const [totalStudents, setTotalStudents] = useState(0);
+    const pageSize = 100;
+
+    // Analytics State
+    const [analyticsData, setAnalyticsData] = useState<any[]>([]);
+    const [rankingData, setRankingData] = useState<any[]>([]);
+
     // Fetch teacher's classes
     useEffect(() => {
         async function fetchClasses() {
-            if (!currentSchool) return;
+            if (roleLoading) return;
+
+            if (!currentSchool) {
+                setIsLoading(false);
+                return;
+            }
 
             // Use any cast since classes table not in generated types yet
             const { data, error } = await (supabase as any)
@@ -68,17 +127,30 @@ export default function Attendance() {
 
             if (error) {
                 console.error('Failed to fetch classes:', error);
+                toast({
+                    title: "Error loading classes",
+                    description: error.message,
+                    variant: "destructive"
+                });
             } else {
-                setClasses(data || []);
-                if (data && data.length > 0 && !selectedClass) {
-                    setSelectedClass(data[0].id);
+                const sortedClasses = (data || []).sort(sortClasses);
+                setClasses(sortedClasses);
+                if (sortedClasses.length > 0) {
+                    // Only set default if we don't have one or if current selection is invalid
+                    // For simplicity, always default to first class on load/switch
+                    setSelectedClass(sortedClasses[0].id);
                 }
             }
             setIsLoading(false);
         }
 
         fetchClasses();
-    }, [currentSchool]);
+    }, [currentSchool, roleLoading]);
+
+    // Reset pagination when class changes
+    useEffect(() => {
+        setPage(1);
+    }, [selectedClass]);
 
     // Fetch attendance for selected class and date
     useEffect(() => {
@@ -86,31 +158,58 @@ export default function Attendance() {
             if (!selectedClass || !selectedDate) return;
 
             setIsLoading(true);
-            const { data, error } = await supabase.rpc('get_class_attendance' as any, {
-                p_class_id: selectedClass,
-                p_date: format(selectedDate, 'yyyy-MM-dd'),
-            });
+            try {
+                // 1. Fetch Count
+                const { data: countData } = await supabase.rpc('get_class_student_count', {
+                    p_class_id: selectedClass
+                });
+                setTotalStudents(Number(countData) || 0);
 
-            if (error) {
-                console.error('Failed to fetch attendance:', error);
+                // 2. Fetch Paginated Daily Status
+                const { data: attendanceData, error: attError } = await supabase.rpc('get_class_attendance_paginated', {
+                    p_class_id: selectedClass,
+                    p_date: format(selectedDate, 'yyyy-MM-dd'),
+                    p_page: page,
+                    p_limit: pageSize
+                });
+
+                if (attError) throw attError;
+                setStudents(attendanceData || []);
+
+                // 3. Fetch Analytics (Summary) - Only fetch on page 1 for efficiency or separate effect? 
+                // Currently keeping it here to ensure it's fresh.
+                if (page === 1) {
+                    const { data: summaryData } = await supabase.rpc('get_class_attendance_summary', {
+                        p_class_id: selectedClass
+                    });
+                    if (summaryData) setAnalyticsData(summaryData as any[]);
+
+                    // 4. Fetch Ranking
+                    const { data: rankData } = await supabase.rpc('get_student_attendance_ranking', {
+                        p_class_id: selectedClass
+                    });
+                    if (rankData) setRankingData(rankData as any[]);
+                }
+
+            } catch (error) {
+                console.error('Failed to fetch attendance data:', error);
                 setStudents([]);
-            } else {
-                setStudents(data || []);
+            } finally {
+                setIsLoading(false);
+                setHasChanges(false);
             }
-            setIsLoading(false);
-            setHasChanges(false);
         }
 
         fetchAttendance();
-    }, [selectedClass, selectedDate]);
+    }, [selectedClass, selectedDate, page]);
 
     // Mark attendance for a student
-    const markAttendance = (studentId: string, status: StudentAttendance['status']) => {
+    const markAttendance = useCallback((studentId: string, status: StudentAttendance['status']) => {
         setStudents(prev => prev.map(s =>
             s.student_id === studentId ? { ...s, status } : s
         ));
         setHasChanges(true);
-    };
+    }, []);
 
     // Mark all students
     const markAll = (status: 'present' | 'absent') => {
@@ -258,45 +357,116 @@ export default function Attendance() {
                         </AlertDescription>
                     </Alert>
                 ) : (
-                    <div className="space-y-2">
-                        {students.map((student) => (
-                            <Card key={student.student_id} className={cn(
-                                "transition-colors",
-                                student.status === 'present' && "border-green-500 bg-green-50 dark:bg-green-950",
-                                student.status === 'absent' && "border-red-500 bg-red-50 dark:bg-red-950",
-                                student.status === 'late' && "border-yellow-500 bg-yellow-50 dark:bg-yellow-950",
-                            )}>
-                                <CardContent className="flex items-center justify-between p-4">
-                                    <span className="font-medium">{student.student_name}</span>
-                                    <div className="flex gap-1">
-                                        <Button
-                                            size="sm"
-                                            variant={student.status === 'present' ? 'default' : 'outline'}
-                                            className={cn(
-                                                student.status === 'present' && "bg-green-600 hover:bg-green-700"
-                                            )}
-                                            onClick={() => markAttendance(student.student_id, 'present')}
-                                        >
-                                            <Check className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant={student.status === 'absent' ? 'destructive' : 'outline'}
-                                            onClick={() => markAttendance(student.student_id, 'absent')}
-                                        >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant={student.status === 'late' ? 'secondary' : 'outline'}
-                                            onClick={() => markAttendance(student.student_id, 'late')}
-                                        >
-                                            <Clock className="h-4 w-4" />
-                                        </Button>
+                    <div className="space-y-6">
+                        {/* Analytics Dashboard */}
+                        <div className="grid gap-6 md:grid-cols-2">
+                            {/* Attendance Overview Chart */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="text-lg">Attendance Overview</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="h-[200px] w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={analyticsData}>
+                                                <XAxis dataKey="student_name" tick={{ fontSize: 10 }} interval={0} angle={-45} textAnchor="end" height={60} />
+                                                <YAxis domain={[0, 100]} />
+                                                <Tooltip />
+                                                <Bar dataKey="attendance_percentage" fill="#16a34a" radius={[4, 4, 0, 0]} name="Attendance %" />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <div className="mt-4 grid grid-cols-2 gap-4 text-center">
+                                        <div className="p-2 bg-muted rounded">
+                                            <div className="text-xl font-bold text-green-600">
+                                                {Math.round((stats.present / (students.length || 1)) * 100)}%
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">Today's Presence</div>
+                                        </div>
+                                        <div className="p-2 bg-muted rounded">
+                                            <div className="text-xl font-bold">
+                                                {totalStudents}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">Total Students</div>
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>
-                        ))}
+
+                            {/* Student Ranking & Roll Numbers */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="text-lg">Class Ranking</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="h-[300px] overflow-y-auto pr-2">
+                                        <table className="w-full text-sm">
+                                            <thead className="text-xs text-muted-foreground bg-muted/50 sticky top-0">
+                                                <tr>
+                                                    <th className="p-2 text-left">Roll #</th>
+                                                    <th className="p-2 text-left">Student</th>
+                                                    <th className="p-2 text-right">Att. %</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {rankingData.map((student) => (
+                                                    <tr key={student.student_id} className="border-b last:border-0 hover:bg-muted/50">
+                                                        <td className="p-2 font-mono font-bold text-primary">
+                                                            #{student.rank}
+                                                        </td>
+                                                        <td className="p-2 font-medium">{student.student_name}</td>
+                                                        <td className="p-2 text-right">
+                                                            <Badge variant={student.attendance_percentage >= 75 ? 'default' : 'destructive'} className={cn(student.attendance_percentage >= 75 ? 'bg-green-500' : '')}>
+                                                                {student.attendance_percentage}%
+                                                            </Badge>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <div className="space-y-2">
+                            {students.map((student) => (
+                                <MemoizedStudentCard
+                                    key={student.student_id}
+                                    student={student}
+                                    onMark={markAttendance}
+                                />
+                            ))}
+                        </div>
+
+                        {/* Pagination Controls */}
+                        {totalStudents > pageSize && (
+                            <div className="flex items-center justify-between mt-4 px-2">
+                                <p className="text-sm text-muted-foreground">
+                                    Page {page} of {Math.ceil(totalStudents / pageSize)}
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                                        disabled={page === 1}
+                                    >
+                                        <ChevronLeft className="h-4 w-4 mr-1" />
+                                        Previous
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setPage(prev => Math.min(Math.ceil(totalStudents / pageSize), prev + 1))}
+                                        disabled={page >= Math.ceil(totalStudents / pageSize)}
+                                    >
+                                        Next
+                                        <ChevronRight className="h-4 w-4 ml-1" />
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

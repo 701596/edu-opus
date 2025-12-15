@@ -5,6 +5,7 @@ import { Users, UserCheck, CreditCard, TrendingUp, DollarSign, Receipt, LayoutDa
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import SystemStatus from '@/components/SystemStatus';
+import { AIChatBox } from '@/components/ai/AIChatBox';
 
 interface DashboardStats {
   totalStudents: number;
@@ -449,6 +450,9 @@ const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Assistant Floating Button */}
+      <AIChatBox />
     </div>
   );
 };
