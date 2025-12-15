@@ -160,12 +160,15 @@ const Staff = () => {
       let activityMap: Record<string, any> = {};
 
       if (currentSchoolId) {
-        const { data: activityData } = await supabase.rpc('get_school_activity', { p_school_id: currentSchoolId });
+        // Use direct query instead of RPC
+        const { data: activityData } = await supabase
+          .from('school_members')
+          .select('user_id, last_active_at')
+          .eq('school_id', currentSchoolId)
+          .eq('is_active', true);
         if (activityData) {
-          // RPC returns JSONB, so cast it
-          const rows = activityData as any[];
-          rows.forEach((item: any) => {
-            if (item.email) activityMap[item.email] = item;
+          activityData.forEach((item: any) => {
+            if (item.user_id) activityMap[item.user_id] = item;
           });
         }
       }

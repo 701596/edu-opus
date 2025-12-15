@@ -24,9 +24,13 @@ const AdminInvites = () => {
         if (!schoolId) return;
         setLoadingStaff(true);
         try {
-            const { data, error } = await supabase.rpc('get_school_activity', {
-                p_school_id: schoolId
-            });
+            // Use direct query instead of RPC
+            const { data, error } = await supabase
+                .from('school_members')
+                .select('user_id, role, is_active, joined_at, last_active_at, invite_used_type, invite_used_code')
+                .eq('school_id', schoolId)
+                .eq('is_active', true);
+            
             if (error) throw error;
             setActiveStaff(data || []);
         } catch (error: any) {
@@ -64,17 +68,28 @@ const AdminInvites = () => {
         setGeneratedLink("");
 
         try {
-            const { data, error } = await supabase.rpc('create_email_invite', {
-                p_email: email,
-                p_role: emailRole as any,
-                p_school_id: schoolId
-            });
+            // Call edge function instead of RPC
+            const { data: { session } } = await supabase.auth.getSession();
+            const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-invite`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session?.access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        school_id: schoolId,
+                        email,
+                        role: emailRole
+                    })
+                }
+            );
 
-            if (error) throw error;
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
 
-            const result = data as any;
-            const link = `${window.location.origin}${result.link}`;
-            setGeneratedLink(link);
+            setGeneratedLink(result.invite_link);
             toast.success("Invitation link generated!");
 
         } catch (error: any) {
@@ -92,15 +107,27 @@ const AdminInvites = () => {
         setGeneratedCode("");
 
         try {
-            const { data, error } = await supabase.rpc('create_code_invite', {
-                p_role: codeRole as any,
-                p_school_id: schoolId
-            });
+            // Call edge function instead of RPC
+            const { data: { session } } = await supabase.auth.getSession();
+            const response = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-staff-invite`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session?.access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        school_id: schoolId,
+                        role: codeRole
+                    })
+                }
+            );
 
-            if (error) throw error;
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
 
-            const result = data as any;
-            setGeneratedCode(result.code);
+            setGeneratedCode(result.code || 'CODE');
             toast.success("Invitation code generated!");
 
         } catch (error: any) {
@@ -144,7 +171,7 @@ const AdminInvites = () => {
                         <CardHeader>
                             <CardTitle>Send Email Invitation</CardTitle>
                             <CardDescription>
-                                Generate a secure link for a staff member. The link expires in 24 hours.
+                                Generate a secure link for a staff member. The link expires in 7 days.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -238,7 +265,7 @@ const AdminInvites = () => {
                                             <Copy className="h-3 w-3 mr-2" />
                                             Copy Code
                                         </Button>
-                                        <p className="text-xs text-muted-foreground">Expires in 24 hours</p>
+                                        <p className="text-xs text-muted-foreground">Expires in 7 days</p>
                                     </div>
                                 ) : (
                                     <Button type="submit" disabled={loading}>
@@ -269,7 +296,7 @@ const AdminInvites = () => {
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-muted/50 text-muted-foreground font-medium">
                                             <tr>
-                                                <th className="p-3">Email</th>
+                                                <th className="p-3">User ID</th>
                                                 <th className="p-3">Role</th>
                                                 <th className="p-3">Status</th>
                                                 <th className="p-3">Joined Via</th>
@@ -290,8 +317,8 @@ const AdminInvites = () => {
                                                     const isOnline = lastActive && (now.getTime() - lastActive.getTime() < 5 * 60 * 1000);
 
                                                     return (
-                                                        <tr key={staff.email} className="border-t">
-                                                            <td className="p-3 font-medium">{staff.email}</td>
+                                                        <tr key={staff.user_id} className="border-t">
+                                                            <td className="p-3 font-medium text-xs">{staff.user_id?.slice(0, 8)}...</td>
                                                             <td className="p-3 capitalize">
                                                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground">
                                                                     {staff.role}

@@ -20,8 +20,22 @@ import { format, addDays, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
+// Type definitions
+interface ClassInfo {
+    id: string;
+    name: string;
+    grade?: string;
+}
+
+interface StudentAttendance {
+    student_id: string;
+    student_name: string;
+    status: 'present' | 'absent' | 'late' | 'unmarked';
+    notes?: string;
+}
+
 // Helper for sorting classes
-const sortClasses = (a: any, b: any) => {
+const sortClasses = (a: ClassInfo, b: ClassInfo) => {
     const order = ['Nursery', 'L.K.G.', 'U.K.G.'];
     const getOrder = (name: string) => {
         const index = order.findIndex(o => name.includes(o));
@@ -81,7 +95,6 @@ const StudentAttendanceCard = ({ student, onMark }: { student: StudentAttendance
 };
 
 // Memoize the component
-// Only re-render if the student object (specifically status) changes
 const MemoizedStudentCard = React.memo(StudentAttendanceCard, (prev, next) => {
     return prev.student.status === next.student.status && prev.student.student_id === next.student.student_id;
 });
@@ -117,8 +130,7 @@ export default function Attendance() {
                 return;
             }
 
-            // Use any cast since classes table not in generated types yet
-            const { data, error } = await (supabase as any)
+            const { data, error } = await supabase
                 .from('classes')
                 .select('id, name, grade')
                 .eq('school_id', currentSchool.school_id)
@@ -136,8 +148,6 @@ export default function Attendance() {
                 const sortedClasses = (data || []).sort(sortClasses);
                 setClasses(sortedClasses);
                 if (sortedClasses.length > 0) {
-                    // Only set default if we don't have one or if current selection is invalid
-                    // For simplicity, always default to first class on load/switch
                     setSelectedClass(sortedClasses[0].id);
                 }
             }
@@ -159,36 +169,84 @@ export default function Attendance() {
 
             setIsLoading(true);
             try {
-                // 1. Fetch Count
-                const { data: countData } = await supabase.rpc('get_class_student_count', {
-                    p_class_id: selectedClass
+                // 1. Fetch Count - using direct query instead of RPC
+                const { count: countData } = await supabase
+                    .from('student_classes')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('class_id', selectedClass)
+                    .eq('is_active', true);
+                setTotalStudents(countData || 0);
+
+                // 2. Fetch students in class with attendance status
+                const { data: studentsInClass, error: studentsError } = await supabase
+                    .from('student_classes')
+                    .select(`
+                        student_id,
+                        students!inner(id, name)
+                    `)
+                    .eq('class_id', selectedClass)
+                    .eq('is_active', true)
+                    .range((page - 1) * pageSize, page * pageSize - 1);
+
+                if (studentsError) throw studentsError;
+
+                // 3. Fetch attendance records for the date
+                const { data: attendanceRecords } = await supabase
+                    .from('attendance')
+                    .select('student_id, status, notes')
+                    .eq('class_id', selectedClass)
+                    .eq('date', format(selectedDate, 'yyyy-MM-dd'));
+
+                const attendanceMap = new Map(
+                    (attendanceRecords || []).map(r => [r.student_id, r])
+                );
+
+                // 4. Build student attendance list
+                const studentList: StudentAttendance[] = (studentsInClass || []).map((sc: any) => {
+                    const att = attendanceMap.get(sc.student_id);
+                    return {
+                        student_id: sc.student_id,
+                        student_name: sc.students?.name || 'Unknown',
+                        status: (att?.status as StudentAttendance['status']) || 'unmarked',
+                        notes: att?.notes
+                    };
                 });
-                setTotalStudents(Number(countData) || 0);
 
-                // 2. Fetch Paginated Daily Status
-                const { data: attendanceData, error: attError } = await supabase.rpc('get_class_attendance_paginated', {
-                    p_class_id: selectedClass,
-                    p_date: format(selectedDate, 'yyyy-MM-dd'),
-                    p_page: page,
-                    p_limit: pageSize
-                });
+                setStudents(studentList);
 
-                if (attError) throw attError;
-                setStudents(attendanceData || []);
+                // 5. Fetch Analytics (Summary)
+                if (page === 1 && studentList.length > 0) {
+                    // Calculate attendance percentages from available data
+                    const { data: summaryData } = await supabase
+                        .from('attendance')
+                        .select('student_id, status')
+                        .eq('class_id', selectedClass);
+                    
+                    if (summaryData) {
+                        const studentStats = new Map<string, { present: number; total: number }>();
+                        summaryData.forEach((r: any) => {
+                            const current = studentStats.get(r.student_id) || { present: 0, total: 0 };
+                            current.total++;
+                            if (r.status === 'present' || r.status === 'late') current.present++;
+                            studentStats.set(r.student_id, current);
+                        });
 
-                // 3. Fetch Analytics (Summary) - Only fetch on page 1 for efficiency or separate effect? 
-                // Currently keeping it here to ensure it's fresh.
-                if (page === 1) {
-                    const { data: summaryData } = await supabase.rpc('get_class_attendance_summary', {
-                        p_class_id: selectedClass
-                    });
-                    if (summaryData) setAnalyticsData(summaryData as any[]);
-
-                    // 4. Fetch Ranking
-                    const { data: rankData } = await supabase.rpc('get_student_attendance_ranking', {
-                        p_class_id: selectedClass
-                    });
-                    if (rankData) setRankingData(rankData as any[]);
+                        const analytics = studentList.map(s => {
+                            const stats = studentStats.get(s.student_id) || { present: 0, total: 0 };
+                            return {
+                                student_name: s.student_name,
+                                attendance_percentage: stats.total > 0 
+                                    ? Math.round((stats.present / stats.total) * 100) 
+                                    : 0
+                            };
+                        });
+                        setAnalyticsData(analytics);
+                        setRankingData(
+                            [...analytics]
+                                .sort((a, b) => b.attendance_percentage - a.attendance_percentage)
+                                .map((a, i) => ({ ...a, rank: i + 1 }))
+                        );
+                    }
                 }
 
             } catch (error) {
@@ -219,25 +277,36 @@ export default function Attendance() {
 
     // Save attendance
     const saveAttendance = async () => {
-        if (!selectedClass) return;
+        if (!selectedClass || !currentSchool) return;
 
         setIsSaving(true);
         try {
+            // Get user ID first
+            const { data: { user } } = await supabase.auth.getUser();
+            const userId = user?.id;
+
             const attendance = students
                 .filter(s => s.status !== 'unmarked')
                 .map(s => ({
                     student_id: s.student_id,
+                    class_id: selectedClass,
+                    date: format(selectedDate, 'yyyy-MM-dd'),
                     status: s.status,
                     notes: s.notes || null,
+                    school_id: currentSchool.school_id,
+                    marked_by: userId
                 }));
 
-            const { error } = await supabase.rpc('mark_attendance_bulk' as any, {
-                p_class_id: selectedClass,
-                p_date: format(selectedDate, 'yyyy-MM-dd'),
-                p_attendance: attendance,
-            });
-
-            if (error) throw error;
+            // Upsert each record
+            for (const record of attendance) {
+                const { error } = await supabase
+                    .from('attendance')
+                    .upsert(record, { 
+                        onConflict: 'student_id,class_id,date',
+                        ignoreDuplicates: false 
+                    });
+                if (error) throw error;
+            }
 
             toast({
                 title: 'Attendance Saved',
@@ -393,7 +462,7 @@ export default function Attendance() {
                                 </CardContent>
                             </Card>
 
-                            {/* Student Ranking & Roll Numbers */}
+                            {/* Student Ranking */}
                             <Card>
                                 <CardHeader>
                                     <CardTitle className="text-lg">Class Ranking</CardTitle>
@@ -401,24 +470,20 @@ export default function Attendance() {
                                 <CardContent>
                                     <div className="h-[300px] overflow-y-auto pr-2">
                                         <table className="w-full text-sm">
-                                            <thead className="text-xs text-muted-foreground bg-muted/50 sticky top-0">
-                                                <tr>
-                                                    <th className="p-2 text-left">Roll #</th>
-                                                    <th className="p-2 text-left">Student</th>
-                                                    <th className="p-2 text-right">Att. %</th>
+                                            <thead className="sticky top-0 bg-background">
+                                                <tr className="border-b">
+                                                    <th className="text-left py-2">#</th>
+                                                    <th className="text-left py-2">Student</th>
+                                                    <th className="text-right py-2">%</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {rankingData.map((student) => (
-                                                    <tr key={student.student_id} className="border-b last:border-0 hover:bg-muted/50">
-                                                        <td className="p-2 font-mono font-bold text-primary">
-                                                            #{student.rank}
-                                                        </td>
-                                                        <td className="p-2 font-medium">{student.student_name}</td>
-                                                        <td className="p-2 text-right">
-                                                            <Badge variant={student.attendance_percentage >= 75 ? 'default' : 'destructive'} className={cn(student.attendance_percentage >= 75 ? 'bg-green-500' : '')}>
-                                                                {student.attendance_percentage}%
-                                                            </Badge>
+                                                {rankingData.map((r: any) => (
+                                                    <tr key={r.student_name} className="border-b">
+                                                        <td className="py-2">{r.rank}</td>
+                                                        <td className="py-2">{r.student_name}</td>
+                                                        <td className="py-2 text-right font-medium">
+                                                            {r.attendance_percentage}%
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -429,8 +494,9 @@ export default function Attendance() {
                             </Card>
                         </div>
 
+                        {/* Student Cards */}
                         <div className="space-y-2">
-                            {students.map((student) => (
+                            {students.map(student => (
                                 <MemoizedStudentCard
                                     key={student.student_id}
                                     student={student}
@@ -439,32 +505,28 @@ export default function Attendance() {
                             ))}
                         </div>
 
-                        {/* Pagination Controls */}
+                        {/* Pagination */}
                         {totalStudents > pageSize && (
-                            <div className="flex items-center justify-between mt-4 px-2">
-                                <p className="text-sm text-muted-foreground">
+                            <div className="flex justify-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={page === 1}
+                                    onClick={() => setPage(p => p - 1)}
+                                >
+                                    Previous
+                                </Button>
+                                <span className="text-sm text-muted-foreground py-2">
                                     Page {page} of {Math.ceil(totalStudents / pageSize)}
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setPage(prev => Math.max(1, prev - 1))}
-                                        disabled={page === 1}
-                                    >
-                                        <ChevronLeft className="h-4 w-4 mr-1" />
-                                        Previous
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setPage(prev => Math.min(Math.ceil(totalStudents / pageSize), prev + 1))}
-                                        disabled={page >= Math.ceil(totalStudents / pageSize)}
-                                    >
-                                        Next
-                                        <ChevronRight className="h-4 w-4 ml-1" />
-                                    </Button>
-                                </div>
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={page >= Math.ceil(totalStudents / pageSize)}
+                                    onClick={() => setPage(p => p + 1)}
+                                >
+                                    Next
+                                </Button>
                             </div>
                         )}
                     </div>
