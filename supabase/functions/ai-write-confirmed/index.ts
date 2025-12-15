@@ -203,12 +203,11 @@ serve(async (req: Request) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
-    } catch (error: unknown) {
+    } catch (error) {
         console.error('AI Write Error:', error)
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         return new Response(JSON.stringify({
             error: 'Failed to execute action',
-            details: errorMessage
+            details: error.message
         }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }

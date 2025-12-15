@@ -86,55 +86,26 @@ export default function AcceptInvite() {
             }
 
             try {
-                // Look up invite from invitations table
-                const { data, error: queryError } = await supabase
-                    .from('invitations')
-                    .select(`
-                        id,
-                        email,
-                        role,
-                        school_id,
-                        expires_at,
-                        used_at,
-                        schools!inner(name)
-                    `)
-                    .eq('token', inviteToken)
-                    .single();
+                // Call RPC to get invite details (public lookup)
+                const { data, error: rpcError } = await supabase.rpc('get_invite_by_token' as unknown as never, {
+                    p_token: inviteToken,
+                });
 
-                if (queryError || !data) {
-                    console.error('Invite lookup error:', queryError);
+                if (rpcError) {
+                    console.error('Invite lookup error:', rpcError);
+                    setError('Failed to load invite details');
+                    setIsLoading(false);
+                    return;
+                }
+
+                if (!data) {
                     setError('This invite link is invalid or has expired');
                     setErrorStatus('INVALID_TOKEN');
                     setIsLoading(false);
                     return;
                 }
 
-                const isExpired = new Date(data.expires_at) < new Date();
-                const isUsed = !!data.used_at;
-
-                if (isExpired) {
-                    setError('This invite has expired');
-                    setErrorStatus('EXPIRED');
-                    setIsLoading(false);
-                    return;
-                }
-
-                if (isUsed) {
-                    setError('This invite has already been used');
-                    setErrorStatus('ALREADY_ACCEPTED');
-                    setIsLoading(false);
-                    return;
-                }
-
-                setInvite({
-                    id: data.id,
-                    email: data.email,
-                    role: data.role as UserRole,
-                    school_id: data.school_id,
-                    school_name: (data.schools as any)?.name || 'Unknown School',
-                    expires_at: data.expires_at,
-                    is_valid: true
-                });
+                setInvite(data as InviteDetails);
             } catch (err) {
                 console.error('Fetch error:', err);
                 setError('Failed to load invite details');
@@ -151,47 +122,59 @@ export default function AcceptInvite() {
     const handleAcceptInvite = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!inviteToken || !user || !invite) return;
+        if (!inviteToken || !user) return;
+        if (!securityCode || securityCode.length !== 6) {
+            setError('Please enter the 6-character security code');
+            return;
+        }
 
         setIsAccepting(true);
         setError(null);
         setErrorStatus(null);
 
         try {
-            // Call accept edge function
-            const { data: { session } } = await supabase.auth.getSession();
-            
-            const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/accept-staff-invite`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${session?.access_token}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        invite_token: inviteToken
-                    })
-                }
-            );
+            // Get user's access token
+            const { data: sessionData } = await supabase.auth.getSession();
+            const accessToken = sessionData.session?.access_token;
 
-            const result = await response.json();
-
-            if (!response.ok) {
-                setError(result.error || 'Failed to accept invite');
+            if (!accessToken) {
+                setError('Session expired. Please log in again.');
+                setErrorStatus('NOT_AUTHENTICATED');
                 setIsAccepting(false);
                 return;
             }
 
-            setSuccess(true);
-            setAcceptedRole(invite.role);
-            setAcceptedSchoolId(invite.school_id);
+            // Call secure RPC directly
+            const { data, error } = await (supabase.rpc as Function)('accept_invite_by_code', {
+                p_token: inviteToken,
+                p_code: securityCode.toUpperCase(),
+            });
 
-            // Redirect after brief delay
-            setTimeout(() => {
-                const redirectPath = getRedirectPath(invite.role, invite.school_id);
-                navigate(redirectPath);
-            }, 2000);
+            if (error) {
+                console.error('Accept error:', error);
+                setError(error.message || 'Failed to accept invite');
+                setIsAccepting(false);
+                return;
+            }
+
+            const result = data as AcceptInviteResponse;
+
+            if (result.status === 'SUCCESS') {
+                setSuccess(true);
+                setAcceptedRole(result.role || null);
+                setAcceptedSchoolId(result.school_id || null);
+
+                // Redirect after brief delay
+                setTimeout(() => {
+                    const redirectPath = getRedirectPath(result.role, result.school_id);
+                    navigate(redirectPath);
+                }, 2000);
+            } else {
+                // Handle specific error statuses
+                setErrorStatus(result.status);
+                setError(getErrorMessage(result.status, result.message));
+                setIsAccepting(false);
+            }
         } catch (err) {
             console.error('Accept error:', err);
             setError('Failed to accept invite. Please try again.');
@@ -208,14 +191,14 @@ export default function AcceptInvite() {
 
         switch (role) {
             case 'teacher':
-                return `/attendance`;
+                return `/school/${schoolId}/attendance`;
             case 'accountant':
             case 'cashier':
-                return `/payments`;
+                return `/school/${schoolId}/finance`;
             case 'principal':
-                return `/dashboard`;
+                return `/school/${schoolId}/dashboard`;
             default:
-                return `/dashboard`;
+                return `/school/${schoolId}/dashboard`;
         }
     };
 
@@ -375,26 +358,40 @@ export default function AcceptInvite() {
                             </div>
                         </div>
                     ) : (
-                        /* User is logged in - show accept button */
+                        /* User is logged in - show security code form */
                         <form onSubmit={handleAcceptInvite} className="space-y-4">
                             <Alert>
                                 <Shield className="h-4 w-4" />
-                                <AlertTitle>Ready to Join</AlertTitle>
+                                <AlertTitle>Enter Security Code</AlertTitle>
                                 <AlertDescription>
-                                    Click below to accept this invitation and join the school.
+                                    Enter the 6-character code provided by your administrator.
                                 </AlertDescription>
                             </Alert>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="securityCode">Security Code</Label>
+                                <Input
+                                    id="securityCode"
+                                    value={securityCode}
+                                    onChange={(e) => setSecurityCode(e.target.value.toUpperCase().slice(0, 6))}
+                                    placeholder="e.g. A1B2C3"
+                                    className="text-center font-mono text-lg tracking-widest uppercase"
+                                    maxLength={6}
+                                    required
+                                    autoComplete="off"
+                                />
+                            </div>
 
                             <Button
                                 type="submit"
                                 className="w-full"
                                 size="lg"
-                                disabled={isAccepting}
+                                disabled={isAccepting || securityCode.length !== 6}
                             >
                                 {isAccepting ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Joining...
+                                        Verifying...
                                     </>
                                 ) : (
                                     <>
