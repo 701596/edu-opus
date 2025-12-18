@@ -14,11 +14,51 @@ const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY')
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
+const MAX_HISTORY_MESSAGES = 30;
+
 interface IdentityMemory {
     user_id?: string;
     name?: string;
     role?: string;
     authority?: string;
+}
+
+// 🟢 HARD ERROR LOGGER
+const logDbError = (context: string, error: any, payload?: any) => {
+    console.error("DB_ERROR", {
+        function: "ai-query",
+        table: context,
+        payload,
+        error
+    });
+    throw new Error(`Database Error (${context}): ${error.message}`);
+};
+
+/**
+ * IDENTITY UPSERT (Unique per User)
+ */
+async function upsertIdentity(supabase: any, user_id: string, payload: any) {
+    // Check existing
+    const { data: existing, error: fetchError } = await supabase
+        .from('ai_identity_memory')
+        .select('id')
+        .eq('user_id', user_id)
+        .maybeSingle()
+
+    if (fetchError) logDbError("ai_identity_memory_fetch", fetchError, { user_id });
+
+    if (existing) {
+        const { error: updateError } = await supabase
+            .from('ai_identity_memory')
+            .update(payload)
+            .eq('id', existing.id);
+        if (updateError) logDbError("ai_identity_memory_update", updateError, { id: existing.id });
+    } else {
+        const { error: insertError } = await supabase
+            .from('ai_identity_memory')
+            .insert({ ...payload, user_id });
+        if (insertError) logDbError("ai_identity_memory_insert", insertError, payload);
+    }
 }
 
 serve(async (req: Request) => {
@@ -28,135 +68,169 @@ serve(async (req: Request) => {
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) return new Response('Missing auth', { status: 401, headers: corsHeaders })
 
-        const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!)
+        // 🟢 1. INFRA: SERVICE ROLE CLIENT
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing Server Env Vars");
+        const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
         const token = authHeader.replace('Bearer ', '')
         const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
 
         if (userError || !user) return new Response('Invalid token', { status: 401, headers: corsHeaders })
 
-        const { data: memberships } = await supabaseAdmin
+        // 2. School Membership Check
+        const { data: memberships, error: memberError } = await supabaseAdmin
             .from('school_members')
             .select('school_id, role')
             .eq('user_id', user.id)
             .eq('is_active', true)
             .limit(1)
 
+        if (memberError) logDbError("school_members", memberError, { user_id: user.id });
         if (!memberships?.length) return new Response('Access denied: No active school membership', { status: 403, headers: corsHeaders })
         const school_id = memberships[0].school_id
 
-        const { message } = await req.json()
+        const { message, session_id } = await req.json()
         if (!message) return new Response('Message required', { status: 400, headers: corsHeaders })
 
-        // 🟢 1. IDENTITY EXTRACTION (REGEX - ZERO GUESSING)
-        // Check for "My name is X", "Call me X", "I am X"
-        // Simple regex for robustness.
+        // 3. IDENTITY EXTRACTION (REGEX)
         const nameRegex = /(?:my name is|call me|i am)\s+([a-zA-Z]+)/i;
         const nameMatch = message.match(nameRegex);
 
         let extractedName = null;
         if (nameMatch && nameMatch[1]) {
             extractedName = nameMatch[1];
-            // UPSERT immediately if found
-            // We use upsert logic: if name matches, great. If not, update it.
-            // But user said: "If identity already exists -> DO NOT overwrite unless explicitly changed"
-            // "Explicitly changed" implies "My name is X" IS an explicit change.
-            // So we upsert.
-
-            // Wait, we need to check existing first?
-            // "If detection found -> UPSERT". "If identity already exists -> DO NOT overwrite unless explicitly..."
-            // "My name is X" is explicit. So we upsert.
-
-            await supabaseAdmin.from('ai_identity_memory').upsert({
-                user_id: user.id,
+            await upsertIdentity(supabaseAdmin, user.id, {
                 name: extractedName,
-                // We keep existing role/authority if any (upsert merges if we select first? No, upsert replaces unless we specify columns)
-                // We need to fetch current to merge.
+                updated_at: new Date().toISOString()
             });
-            // Actually, best to fetch first to do a safe merge.
         }
 
-        // 🔵 2. LOAD MEMORY LAYERS
-        // A. Identity (Single Source of Truth)
-        const { data: identityRecord } = await supabaseAdmin
+        // 4. LOAD MEMORY LAYERS
+        // A. Identity (Global)
+        const { data: identityRecord, error: idLoadError } = await supabaseAdmin
             .from('ai_identity_memory')
             .select('*')
             .eq('user_id', user.id)
             .maybeSingle()
+        if (idLoadError) logDbError("ai_identity_memory_load", idLoadError);
 
         let identity: IdentityMemory = identityRecord || {}
+        if (extractedName) identity.name = extractedName;
 
-        // Optimization: If we just extracted a name, use it in this session immediately even if DB write implies async race (though await handles it).
-        if (extractedName) {
-            identity.name = extractedName;
-            // We should ensure the DB is updated.
-            const { error: upsertError } = await supabaseAdmin.from('ai_identity_memory').upsert({
-                user_id: user.id,
-                name: extractedName,
-                role: identity.role || 'Principal', // Default if missing
-                authority: identity.authority || 'System Owner'
-            }, { onConflict: 'user_id' });
-            if (upsertError) console.error("Identity Upsert Error", upsertError);
+        // B. Context (Session Aware)
+        // If session_id provided, load THAT session. If not, we will creat a new one.
+        let fullMessages = [];
+        let longTermSummary = "No specific long-term summary available yet.";
+        let currentSessionId = session_id;
+
+        if (currentSessionId) {
+            const { data: sessionRecord, error: sessLoadError } = await supabaseAdmin
+                .from('ai_memories')
+                .select('*')
+                .eq('id', currentSessionId)
+                .single();
+
+            if (sessLoadError) {
+                // If not found, assume invalid session and treat as new? Or error?
+                // Let's treat as new if not found, but log warning.
+                console.warn(`Session ${currentSessionId} not found. Creating new.`);
+                currentSessionId = null;
+            } else {
+                fullMessages = sessionRecord.messages || [];
+                longTermSummary = sessionRecord.summary || longTermSummary;
+            }
         }
 
-        // B. Context (Long/Short)
-        const { data: contextRecord } = await supabaseAdmin
-            .from('ai_memories')
-            .select('*')
-            .eq('user_id', user.id)
-            .maybeSingle()
+        // 🟢 5. PERSISTENCE: SAVE USER MESSAGE BEFORE LLM CALL
+        const userMsgObj = { role: 'user', content: message, timestamp: new Date().toISOString() };
+        const preCallMessages = [...fullMessages, userMsgObj];
 
-        const previousMessages = contextRecord?.messages || []
-        const longTermSummary = contextRecord?.summary || "No specific preferences recorded."
+        // Save to DB (Update or Insert)
+        if (currentSessionId) {
+            const { error: updateError } = await supabaseAdmin
+                .from('ai_memories')
+                .update({
+                    messages: preCallMessages,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', currentSessionId);
 
-        // 🟡 3. INTENT CLASSIFICIATION
+            if (updateError) logDbError("ai_memories_update", updateError, { id: currentSessionId });
+        } else {
+            // New Session
+            const { data: newSession, error: insertError } = await supabaseAdmin
+                .from('ai_memories')
+                .insert({
+                    user_id: user.id,
+                    school_id: school_id,
+                    messages: preCallMessages,
+                    summary: null, // Start fresh
+                    updated_at: new Date().toISOString()
+                })
+                .select()
+                .single();
+
+            if (insertError) logDbError("ai_memories_insert", insertError);
+            currentSessionId = newSession.id;
+        }
+
+        // 6. INTENT & ASSEMBLY
         const intent = classifyIntent(message)
+        const promptMessages = []
 
-        // 🟣 4. PROMPT ASSEMBLY (LOCKED ORDER)
-        const messages = []
+        // L1: SYSTEM PROMPT
+        promptMessages.push({ role: "system", content: AXIOM_SYSTEM_PROMPT })
 
-        // [SYSTEM PROMPT]
-        messages.push({ role: "system", content: AXIOM_SYSTEM_PROMPT })
-
-        // [IDENTITY MEMORY – PROTECTED]
+        // L2: IDENTITY MEMORY
         const identityBlock = `[IDENTITY MEMORY – PROTECTED, AUTHORITATIVE]
-• Name: ${identity.name || 'Unknown (Ask User)'}
+• Name: ${identity.name || 'Unknown (Capture if provided)'}
 • Role: ${identity.role || 'Principal'}
-• Authority: ${identity.authority || 'Authorised User'}
+• Authority: ${identity.authority || 'System Owner'}
 • Instruction: This information is factual and must never be questioned, denied, or re-asked.`
-        messages.push({ role: "system", content: identityBlock })
+        promptMessages.push({ role: "system", content: identityBlock })
 
-        // [LONG-TERM SUMMARY]
-        messages.push({
+        // L3: LONG-TERM SUMMARY
+        promptMessages.push({
             role: "system", content: `[LONG-TERM SUMMARY]
 ${longTermSummary}`
         })
 
-        // [PLATFORM BLUEPRINT] (Nav only)
+        // L4: BLUEPRINT (Conditional)
         if (intent.category === 'NAVIGATOR') {
-            messages.push({
+            promptMessages.push({
                 role: "system", content: `[PLATFORM BLUEPRINT]
 ${PLATFORM_BLUEPRINT}`
             })
         }
 
-        // [LAST 30 MESSAGES]
-        const thread = formatConversationThread(previousMessages, 30);
-        messages.push({
-            role: "system", content: `[CONVERSATION THREAD]
-${thread}`
-        })
+        // L5: LAST 30 MESSAGES
+        const historyMessages = preCallMessages.slice(0, -1);
+        let recentHistory = historyMessages;
+        let summaryContext = "";
 
-        // [CURRENT USER MESSAGE]
-        messages.push({ role: "user", content: message })
+        if (historyMessages.length > MAX_HISTORY_MESSAGES) {
+            recentHistory = historyMessages.slice(-MAX_HISTORY_MESSAGES);
+            summaryContext = `[HISTORY SUMMARY: Previous ${historyMessages.length - MAX_HISTORY_MESSAGES} messages exist in database.]`;
+        }
 
-        // 🔴 5. MEMORY FAILURE GUARD (FAIL FAST)
+        if (summaryContext) promptMessages.push({ role: "system", content: summaryContext });
+
+        recentHistory.forEach((msg: any) => {
+            if (msg.role === 'user' || msg.role === 'assistant') {
+                promptMessages.push({ role: msg.role, content: msg.content });
+            }
+        });
+
+        // L6: CURRENT USER MESSAGE
+        promptMessages.push({ role: "user", content: message })
+
+        // 🔴 MEMORY FAILURE GUARD
         if (identity.name && !identityBlock.includes(identity.name)) {
-            // This is theoretically impossible given the code above, but checks for logic errors
             throw new Error("IDENTITY MEMORY NOT INJECTED — BLOCKING REQUEST")
         }
 
-        // 🚀 6. CALL LLM
-        console.log(`[LLM] Calling OpenRouter. Identity: ${identity.name || 'None'}`)
+        // 🚀 7. CALL LLM
+        console.log(`[LLM] Calling OpenRouter. Model: meta-llama/llama-3.3-70b-instruct:free`)
         const aiResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -167,37 +241,41 @@ ${thread}`
             },
             body: JSON.stringify({
                 model: 'meta-llama/llama-3.3-70b-instruct:free',
-                messages: messages,
+                messages: promptMessages,
                 max_tokens: 1024,
                 temperature: intent.category === 'NAVIGATOR' ? 0 : 0.3,
             })
         })
 
         if (!aiResponse.ok) {
-            throw new Error(`OpenRouter Error: ${aiResponse.status} ${await aiResponse.text()}`)
+            const errText = await aiResponse.text()
+            console.error('[LLM] API Error Response:', errText)
+            throw new Error(`OpenRouter Error: ${aiResponse.status}`)
         }
 
         const aiData = await aiResponse.json()
+        if (aiData.error) throw new Error(`LLM Error: ${JSON.stringify(aiData.error)}`)
+
         let assistantContent = aiData.choices?.[0]?.message?.content || "System Error."
 
-        // 7. Store Result (Short term)
-        const updatedMessages = [
-            ...previousMessages,
-            { role: 'user', content: message },
-            { role: 'assistant', content: assistantContent }
-        ].slice(-30);
+        // 8. PERSISTENCE: SAVE ASSISTANT MESSAGE
+        const assistantMsgObj = { role: 'assistant', content: assistantContent, timestamp: new Date().toISOString() };
+        const finalMessages = [...preCallMessages, assistantMsgObj];
 
-        await supabaseAdmin.from('ai_memories').upsert({
-            user_id: user.id,
-            school_id: school_id,
-            messages: updatedMessages,
-            updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' });
+        const { error: finalSaveError } = await supabaseAdmin.from('ai_memories')
+            .update({
+                messages: finalMessages,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', currentSessionId);
+
+        if (finalSaveError) logDbError("ai_memories_final_save", finalSaveError);
 
         return new Response(JSON.stringify({
             message: assistantContent,
+            session_id: currentSessionId, // Return ID for client to track
             intent,
-            debug: { identity_used: identity.name }
+            debug: { identity_used: identity.name, history_length: finalMessages.length }
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
     } catch (error: any) {

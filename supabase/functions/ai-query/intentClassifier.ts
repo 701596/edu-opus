@@ -250,7 +250,7 @@ export function classifyIntent(query: string): QueryIntent {
     let confidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
     if (categoryConfidence === 'HIGH' && required_domains.length > 0) {
         confidence = 'HIGH';
-    } else if (categoryConfidence === 'MEDIUM' || required_domains.length > 0) {
+    } else if (required_domains.length > 0) {
         confidence = 'MEDIUM';
     }
 

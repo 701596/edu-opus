@@ -20,6 +20,21 @@ import { format, addDays, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 
+export interface StudentAttendance {
+    student_id: string;
+    student_name: string;
+    status: 'present' | 'absent' | 'late' | 'unmarked';
+    notes?: string;
+    rank?: number;
+    attendance_percentage?: number;
+}
+
+export interface ClassInfo {
+    id: string;
+    name: string;
+    grade?: string | null;
+}
+
 // Helper for sorting classes
 const sortClasses = (a: any, b: any) => {
     const order = ['Nursery', 'L.K.G.', 'U.K.G.'];
@@ -160,13 +175,13 @@ export default function Attendance() {
             setIsLoading(true);
             try {
                 // 1. Fetch Count
-                const { data: countData } = await supabase.rpc('get_class_student_count', {
+                const { data: countData } = await (supabase as any).rpc('get_class_student_count', {
                     p_class_id: selectedClass
                 });
                 setTotalStudents(Number(countData) || 0);
 
                 // 2. Fetch Paginated Daily Status
-                const { data: attendanceData, error: attError } = await supabase.rpc('get_class_attendance_paginated', {
+                const { data: attendanceData, error: attError } = await (supabase as any).rpc('get_class_attendance_paginated', {
                     p_class_id: selectedClass,
                     p_date: format(selectedDate, 'yyyy-MM-dd'),
                     p_page: page,
@@ -174,18 +189,18 @@ export default function Attendance() {
                 });
 
                 if (attError) throw attError;
-                setStudents(attendanceData || []);
+                setStudents((attendanceData as StudentAttendance[]) || []);
 
                 // 3. Fetch Analytics (Summary) - Only fetch on page 1 for efficiency or separate effect? 
                 // Currently keeping it here to ensure it's fresh.
                 if (page === 1) {
-                    const { data: summaryData } = await supabase.rpc('get_class_attendance_summary', {
+                    const { data: summaryData } = await (supabase as any).rpc('get_class_attendance_summary', {
                         p_class_id: selectedClass
                     });
                     if (summaryData) setAnalyticsData(summaryData as any[]);
 
                     // 4. Fetch Ranking
-                    const { data: rankData } = await supabase.rpc('get_student_attendance_ranking', {
+                    const { data: rankData } = await (supabase as any).rpc('get_student_attendance_ranking', {
                         p_class_id: selectedClass
                     });
                     if (rankData) setRankingData(rankData as any[]);

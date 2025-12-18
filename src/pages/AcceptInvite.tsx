@@ -87,7 +87,7 @@ export default function AcceptInvite() {
 
             try {
                 // Call RPC to get invite details (public lookup)
-                const { data, error: rpcError } = await supabase.rpc('get_invite_by_token' as unknown as never, {
+                const { data, error: rpcError } = await (supabase as any).rpc('get_invite_by_token', {
                     p_token: inviteToken,
                 });
 
@@ -145,7 +145,7 @@ export default function AcceptInvite() {
             }
 
             // Call secure RPC directly
-            const { data, error } = await (supabase.rpc as Function)('accept_invite_by_code', {
+            const { data, error } = await (supabase as any).rpc('accept_invite_by_code', {
                 p_token: inviteToken,
                 p_code: securityCode.toUpperCase(),
             });

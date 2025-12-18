@@ -24,11 +24,11 @@ const AdminInvites = () => {
         if (!schoolId) return;
         setLoadingStaff(true);
         try {
-            const { data, error } = await supabase.rpc('get_school_activity', {
+            const { data, error } = await (supabase as any).rpc('get_school_activity', {
                 p_school_id: schoolId
             });
             if (error) throw error;
-            setActiveStaff(data || []);
+            setActiveStaff((data as any[]) || []);
         } catch (error: any) {
             console.error(error);
             toast.error("Failed to load active staff");
@@ -64,7 +64,7 @@ const AdminInvites = () => {
         setGeneratedLink("");
 
         try {
-            const { data, error } = await supabase.rpc('create_email_invite', {
+            const { data, error } = await (supabase as any).rpc('create_email_invite', {
                 p_email: email,
                 p_role: emailRole as any,
                 p_school_id: schoolId
@@ -92,7 +92,7 @@ const AdminInvites = () => {
         setGeneratedCode("");
 
         try {
-            const { data, error } = await supabase.rpc('create_code_invite', {
+            const { data, error } = await (supabase as any).rpc('create_code_invite', {
                 p_role: codeRole as any,
                 p_school_id: schoolId
             });

@@ -160,7 +160,7 @@ const Staff = () => {
       let activityMap: Record<string, any> = {};
 
       if (currentSchoolId) {
-        const { data: activityData } = await supabase.rpc('get_school_activity', { p_school_id: currentSchoolId });
+        const { data: activityData } = await (supabase as any).rpc('get_school_activity', { p_school_id: currentSchoolId });
         if (activityData) {
           // RPC returns JSONB, so cast it
           const rows = activityData as any[];

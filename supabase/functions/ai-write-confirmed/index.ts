@@ -9,20 +9,23 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-/**
- * AI Write Confirmed Endpoint
- * 
- * Executes a pending write action after principal confirmation.
- * Supports: add_student, update_student, add_payment, add_expense, etc.
- */
+// 🟢 HARD ERROR LOGGER
+const logDbError = (context: string, error: any, payload?: any) => {
+    console.error("DB_ERROR", {
+        function: "ai-write-confirmed",
+        table: context,
+        payload,
+        error
+    });
+    throw new Error(`Database Error (${context}): ${error.message}`);
+};
+
 serve(async (req: Request) => {
-    // Handle CORS preflight
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
     }
 
     try {
-        // 1. Get auth token
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
             return new Response(JSON.stringify({ error: 'Missing authorization' }), {
@@ -31,16 +34,17 @@ serve(async (req: Request) => {
             })
         }
 
-        // 2. Create Supabase client with service role for writes
-        const supabaseAdmin = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!)
+        // 🟢 1. INFRA: SERVICE ROLE CLIENT (MANDATORY)
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing Server Env Vars");
+        const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-        // Verify user token
-        const supabaseUser = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!, {
+        // Verify user token for ID
+        const supabaseUser = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
             global: { headers: { Authorization: authHeader } }
         })
 
-        const { data: { user } } = await supabaseUser.auth.getUser(authHeader.replace('Bearer ', ''))
-        if (!user) {
+        const { data: { user }, error: userError } = await supabaseUser.auth.getUser(authHeader.replace('Bearer ', ''))
+        if (userError || !user) {
             return new Response(JSON.stringify({ error: 'Invalid user' }), {
                 status: 401,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -48,7 +52,7 @@ serve(async (req: Request) => {
         }
 
         // 3. Check principal role
-        const { data: membership } = await supabaseAdmin
+        const { data: membership, error: memberError } = await supabaseAdmin
             .from('school_members')
             .select('role, school_id')
             .eq('user_id', user.id)
@@ -56,6 +60,7 @@ serve(async (req: Request) => {
             .eq('is_active', true)
             .single()
 
+        if (memberError) logDbError("school_members", memberError, { user_id: user.id });
         if (!membership) {
             return new Response(JSON.stringify({ error: 'Access denied. Principals only.' }), {
                 status: 403,
@@ -81,7 +86,8 @@ serve(async (req: Request) => {
             .eq('confirmed', false)
             .single()
 
-        if (fetchError || !pendingAction) {
+        if (fetchError) logDbError("ai_pending_writes_fetch", fetchError, { action_id });
+        if (!pendingAction) {
             return new Response(JSON.stringify({ error: 'Action not found or already executed' }), {
                 status: 404,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -111,7 +117,7 @@ serve(async (req: Request) => {
                     .select()
                     .single()
 
-                if (studentError) throw studentError
+                if (studentError) logDbError("students_insert", studentError, actionData);
                 result = { message: 'Student added successfully', student: newStudent }
                 break
 
@@ -122,7 +128,7 @@ serve(async (req: Request) => {
                     .update(updateData)
                     .eq('id', student_id)
 
-                if (updateError) throw updateError
+                if (updateError) logDbError("students_update", updateError, actionData);
                 result = { message: 'Student updated successfully' }
                 break
 
@@ -136,7 +142,7 @@ serve(async (req: Request) => {
                     .select()
                     .single()
 
-                if (paymentError) throw paymentError
+                if (paymentError) logDbError("payments_insert", paymentError, actionData);
                 result = { message: 'Payment recorded successfully', payment: newPayment }
                 break
 
@@ -150,7 +156,7 @@ serve(async (req: Request) => {
                     .select()
                     .single()
 
-                if (expenseError) throw expenseError
+                if (expenseError) logDbError("expenses_insert", expenseError, actionData);
                 result = { message: 'Expense added successfully', expense: newExpense }
                 break
 
@@ -158,7 +164,7 @@ serve(async (req: Request) => {
                 // Bulk update attendance
                 const { class_id, date, attendance_records } = actionData
                 for (const record of attendance_records) {
-                    await supabaseAdmin
+                    const { error: attError } = await supabaseAdmin
                         .from('attendance')
                         .upsert({
                             student_id: record.student_id,
@@ -167,6 +173,8 @@ serve(async (req: Request) => {
                             status: record.status,
                             marked_by: user.id
                         }, { onConflict: 'student_id,class_id,date' })
+
+                    if (attError) logDbError("attendance_upsert", attError, record);
                 }
                 result = { message: 'Attendance updated successfully' }
                 break
@@ -179,7 +187,7 @@ serve(async (req: Request) => {
         }
 
         // 8. Mark action as confirmed
-        await supabaseAdmin
+        const { error: confirmError } = await supabaseAdmin
             .from('ai_pending_writes')
             .update({
                 confirmed: true,
@@ -187,8 +195,10 @@ serve(async (req: Request) => {
             })
             .eq('id', action_id)
 
+        if (confirmError) logDbError("ai_pending_writes_confirm", confirmError, { action_id });
+
         // 9. Log to audit
-        await supabaseAdmin
+        const { error: auditError } = await supabaseAdmin
             .from('ai_audit_logs')
             .insert({
                 user_id: user.id,
@@ -198,12 +208,14 @@ serve(async (req: Request) => {
                 action_type: 'write_confirmed'
             })
 
+        if (auditError) logDbError("ai_audit_logs_insert", auditError);
+
         // 10. Return success
         return new Response(JSON.stringify(result), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
-    } catch (error) {
+    } catch (error: any) {
         console.error('AI Write Error:', error)
         return new Response(JSON.stringify({
             error: 'Failed to execute action',

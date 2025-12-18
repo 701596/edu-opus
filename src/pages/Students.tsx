@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ import { useCurrency } from '@/contexts/CurrencyContext';
 import { StudentBatchImport } from '@/components/StudentBatchImport';
 import { BulkEditStudents } from '@/components/BulkEditStudents';
 import { useAuth } from '@/hooks/useAuth';
+import { useFinancialData } from '@/hooks/useFinancialData';
 
 const studentSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -61,6 +62,20 @@ const Students = () => {
 
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
+
+  // Derived financial data (time-based, server-driven)
+  const { data: financialData } = useFinancialData();
+
+  // Build lookup map for per-student derived fees
+  const derivedFeesMap = useMemo(() => {
+    const map = new Map<string, { expected_fee: number; paid_fee: number; remaining_fee: number }>();
+    if (financialData?.fees?.students) {
+      for (const s of financialData.fees.students) {
+        map.set(s.id, s);
+      }
+    }
+    return map;
+  }, [financialData]);
 
   const form = useForm<z.infer<typeof studentSchema>>({
     resolver: zodResolver(studentSchema),
@@ -602,7 +617,7 @@ const Students = () => {
                         {formatAmount(Number((student as any).total_fee || student.fee_amount || 0))}
                       </TableCell>
                       <TableCell className="font-semibold text-orange-600">
-                        {formatAmount(Number((student as any).remaining_fee || 0))}
+                        {formatAmount(derivedFeesMap.get(student.id)?.remaining_fee ?? Number((student as any).remaining_fee || 0))}
                       </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${(student as any).payment_status === 'paid'

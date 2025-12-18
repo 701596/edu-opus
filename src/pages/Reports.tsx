@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { TrendingUp, TrendingDown, DollarSign, Receipt, CreditCard, BarChart3 } from 'lucide-react';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useFinancialData } from '@/hooks/useFinancialData';
 
 interface ReportData {
   totalIncome: number;
@@ -37,6 +38,9 @@ const Reports = () => {
   });
   const [loading, setLoading] = useState(true);
   const { formatAmount } = useCurrency();
+
+  // Derived financial data (time-based, server-driven)
+  const { data: financialData } = useFinancialData();
 
   useEffect(() => {
     fetchReportData();
@@ -222,7 +226,7 @@ const Reports = () => {
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.totalExpenses)}</div>
             <p className="text-xs text-muted-foreground">
-              Expected staff salaries: {formatAmount(reportData.expectedSalaryExpense)}
+              Expected staff salaries: {formatAmount(financialData?.salaries?.total_expected ?? reportData.expectedSalaryExpense)}
             </p>
           </CardContent>
         </Card>
@@ -265,8 +269,10 @@ const Reports = () => {
             <Receipt className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-foreground">{formatAmount(reportData.remainingFees)}</div>
-            <p className="text-xs text-muted-foreground">Outstanding amount</p>
+            <div className="text-2xl font-bold text-foreground">
+              {formatAmount(financialData?.fees?.total_remaining ?? reportData.remainingFees)}
+            </div>
+            <p className="text-xs text-muted-foreground">Derived from server date</p>
           </CardContent>
         </Card>
 

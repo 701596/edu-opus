@@ -18,6 +18,7 @@ import { downloadReceipt } from '@/lib/receiptGenerator';
 import { PaymentBatchImport } from '@/components/PaymentBatchImport';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { StudentSearchSelect } from '@/components/ui/StudentSearchSelect';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -448,20 +449,13 @@ const Payments = () => {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Select Student</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a student" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {students.map((student) => (
-                              <SelectItem key={student.id} value={student.id}>
-                                {student.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <StudentSearchSelect
+                            value={field.value}
+                            onChange={(id) => field.onChange(id)}
+                            placeholder="Search for a student..."
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,10 @@ import { Plus, Edit, Trash2, CreditCard, FolderOpen, Search, ChevronLeft, Chevro
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
 import { useSearchParams } from 'react-router-dom';
+import { StudentSearchSelect } from '@/components/ui/StudentSearchSelect';
+import { useFinancialData } from '@/hooks/useFinancialData';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Label } from '@/components/ui/label';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -45,7 +49,7 @@ type FeeFolder = {
 
 const RemainingFees = () => {
   const [feeFolders, setFeeFolders] = useState<FeeFolder[]>([]);
-  const [students, setStudents] = useState<{ id: string; name: string; remaining_fee?: number }[]>([]);
+  // const [students, setStudents] = useState<...>([]); // Removed
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingFeeFolder, setEditingFeeFolder] = useState<FeeFolder | null>(null);
@@ -53,13 +57,16 @@ const RemainingFees = () => {
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
 
+  // Derived financial data (time-based, server-driven)
+  const { data: financialData } = useFinancialData();
+
   // Pagination & Search state
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
   const [currentPage, setCurrentPage] = useState(parseInt(searchParams.get('page') || '1', 10));
   const [totalCount, setTotalCount] = useState(0);
-  const [totalStudentRemainingFees, setTotalStudentRemainingFees] = useState(0);
+  // const [totalStudentRemainingFees, setTotalStudentRemainingFees] = useState(0); // Removed
   const [totalFolderRemaining, setTotalFolderRemaining] = useState(0);
 
   const form = useForm<z.infer<typeof feeFolderSchema>>({
@@ -74,6 +81,25 @@ const RemainingFees = () => {
       status: 'pending',
     },
   });
+
+  // Mode state
+  const [creationMode, setCreationMode] = useState<'single' | 'all'>('single');
+
+  // Reset or set placeholder when mode changes
+  useEffect(() => {
+    if (creationMode === 'all') {
+      form.setValue('student_id', 'bulk-placeholder');
+      setEditingFeeFolder(null); // Ensure we are not in edit mode
+    } else if (creationMode === 'single' && !editingFeeFolder) {
+      // Only clear if not editing
+      const currentId = form.getValues('student_id');
+      if (currentId === 'bulk-placeholder') {
+        form.setValue('student_id', '');
+      }
+    }
+  }, [creationMode, form, editingFeeFolder]);
+
+  // Debounce search input
 
   // Debounce search input
   useEffect(() => {
@@ -174,53 +200,31 @@ const RemainingFees = () => {
     }
   }, [currentPage, debouncedSearch, toast]);
 
-  const fetchStudents = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('students')
-        .select('id, name, remaining_fee')
-        .order('name');
-
-      if (error) throw error;
-      setStudents(data || []);
-
-      // Calculate total student remaining fees
-      const total = (data || []).reduce((sum, student) => sum + Number(student.remaining_fee || 0), 0);
-      setTotalStudentRemainingFees(total);
-    } catch (error) {
-      console.error('Error fetching students:', error);
+  // Throttled refetch to prevent lag from cascading real-time events
+  const lastRefetchRef = useRef<number>(0);
+  const throttledRefetch = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRefetchRef.current > 2000) { // Min 2 sec between refetches
+      lastRefetchRef.current = now;
+      fetchFeeFolders();
     }
-  }, []);
+  }, [fetchFeeFolders]);
 
   useEffect(() => {
     fetchFeeFolders();
-    fetchStudents();
 
-    // Real-time subscriptions
-    const feeFoldersChannel = supabase
-      .channel('fee-folders-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_folders' }, fetchFeeFolders)
-      .subscribe();
-
-    const paymentsChannel = supabase
-      .channel('fee-folders-payments')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchFeeFolders)
-      .subscribe();
-
-    const studentsChannel = supabase
-      .channel('fee-folders-students')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
-        fetchFeeFolders();
-        fetchStudents();
-      })
+    // Single channel for all fee-related changes (reduces overhead)
+    const feeChannel = supabase
+      .channel('fee-changes-combined')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_folders' }, throttledRefetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, throttledRefetch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, throttledRefetch)
       .subscribe();
 
     return () => {
-      supabase.removeChannel(feeFoldersChannel);
-      supabase.removeChannel(paymentsChannel);
-      supabase.removeChannel(studentsChannel);
+      supabase.removeChannel(feeChannel);
     };
-  }, [fetchFeeFolders, fetchStudents]);
+  }, [fetchFeeFolders, throttledRefetch]);
 
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
@@ -230,42 +234,67 @@ const RemainingFees = () => {
     }
   };
 
+  // Mode state and effect handled above
+
   const onSubmit = async (data: z.infer<typeof feeFolderSchema>) => {
     try {
       const amountPaid = data.amount_paid || 0;
       const status = amountPaid >= data.amount_due ? 'paid' : amountPaid > 0 ? 'partial' : 'pending';
 
-      if (editingFeeFolder) {
-        const { error } = await supabase
-          .from('fee_folders')
-          .update({
-            student_id: data.student_id,
+      if (creationMode === 'all' && !editingFeeFolder) {
+        // BULK CREATION MODE
+        const { data: result, error } = await supabase.functions.invoke('bulk-create-fee-folders', {
+          body: {
             folder_name: data.folder_name,
             category: data.category,
             amount_due: data.amount_due,
             amount_paid: amountPaid,
             due_date: data.due_date || null,
-            status,
-          })
-          .eq('id', editingFeeFolder.id);
+          }
+        });
 
         if (error) throw error;
-        toast({ title: 'Success', description: 'Fee folder updated successfully' });
+        toast({ title: 'Success', description: `Created fee folders for ${result.count} students.` });
       } else {
-        const { error } = await supabase
-          .from('fee_folders')
-          .insert([{
-            student_id: data.student_id,
-            folder_name: data.folder_name,
-            category: data.category,
-            amount_due: data.amount_due,
-            amount_paid: amountPaid,
-            due_date: data.due_date || null,
-            status,
-          }]);
+        // SINGLE CREATION MODE (Legacy/Standard)
+        if (editingFeeFolder) {
+          const { error } = await supabase
+            .from('fee_folders')
+            .update({
+              student_id: data.student_id,
+              folder_name: data.folder_name,
+              category: data.category,
+              amount_due: data.amount_due,
+              amount_paid: amountPaid,
+              due_date: data.due_date || null,
+              status,
+            })
+            .eq('id', editingFeeFolder.id);
 
-        if (error) throw error;
-        toast({ title: 'Success', description: 'Fee folder added successfully' });
+          if (error) throw error;
+          toast({ title: 'Success', description: 'Fee folder updated successfully' });
+        } else {
+          // Verify student_id is present for single mode
+          if (!data.student_id) {
+            toast({ title: 'Error', description: 'Please select a student', variant: 'destructive' });
+            return;
+          }
+
+          const { error } = await supabase
+            .from('fee_folders')
+            .insert([{
+              student_id: data.student_id,
+              folder_name: data.folder_name,
+              category: data.category,
+              amount_due: data.amount_due,
+              amount_paid: amountPaid,
+              due_date: data.due_date || null,
+              status,
+            }]);
+
+          if (error) throw error;
+          toast({ title: 'Success', description: 'Fee folder added successfully' });
+        }
       }
 
       setIsDialogOpen(false);
@@ -273,7 +302,13 @@ const RemainingFees = () => {
       form.reset();
       fetchFeeFolders();
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+      console.error('Fee folder submission error:', error);
+      let errorMessage = 'An error occurred';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null && 'message' in error) {
+        errorMessage = String((error as any).message);
+      }
       toast({
         title: 'Error',
         description: errorMessage,
@@ -284,6 +319,7 @@ const RemainingFees = () => {
 
   const handleEdit = (feeFolder: FeeFolder) => {
     setEditingFeeFolder(feeFolder);
+    setCreationMode('single'); // Edit is always single
     form.reset({
       student_id: feeFolder.student_id,
       folder_name: feeFolder.folder_name,
@@ -411,30 +447,53 @@ const RemainingFees = () => {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="student_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Student</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+
+                {/* Mode Selector - Only show when adding new folder */}
+                {!editingFeeFolder && (
+                  <div className="space-y-3 pb-2 border-b">
+                    <Label>Creation Mode</Label>
+                    <RadioGroup
+                      defaultValue="single"
+                      value={creationMode}
+                      onValueChange={(v) => setCreationMode(v as 'single' | 'all')}
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="single" id="mode-single" />
+                        <Label htmlFor="mode-single">Single Student</Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value="all" id="mode-all" />
+                        <Label htmlFor="mode-all" className="text-primary font-medium">Apply to All Students</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+                )}
+
+                {creationMode === 'single' ? (
+                  <FormField
+                    control={form.control}
+                    name="student_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Student</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a student" />
-                          </SelectTrigger>
+                          <StudentSearchSelect
+                            value={field.value === 'bulk-placeholder' ? '' : field.value}
+                            onChange={(id) => field.onChange(id)}
+                            placeholder="Search for a student..."
+                          />
                         </FormControl>
-                        <SelectContent>
-                          {students.map((student) => (
-                            <SelectItem key={student.id} value={student.id}>
-                              {student.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-md border border-blue-200 dark:border-blue-800 text-sm">
+                    <p className="font-medium">⚠️ Bulk Operation</p>
+                    <p>This will create a fee folder for <strong>every active student</strong> in your account.</p>
+                  </div>
+                )}
                 <FormField
                   control={form.control}
                   name="folder_name"
@@ -559,8 +618,10 @@ const RemainingFees = () => {
             <CreditCard className="h-4 w-4 text-destructive" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{formatAmount(totalStudentRemainingFees)}</div>
-            <p className="text-xs text-muted-foreground">Total remaining across all students</p>
+            <div className="text-2xl font-bold text-destructive">
+              {formatAmount(financialData?.fees?.total_remaining || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">Derived from server date</p>
           </CardContent>
         </Card>
 

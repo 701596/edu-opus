@@ -6,6 +6,7 @@ import { useCurrency } from '@/contexts/CurrencyContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import SystemStatus from '@/components/SystemStatus';
 import { AIChatBox } from '@/components/ai/AIChatBox';
+import { useFinancialData } from '@/hooks/useFinancialData';
 
 interface DashboardStats {
   totalStudents: number;
@@ -41,6 +42,9 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const { formatAmount } = useCurrency();
+
+  // Derived financial data (time-based, server-driven, tenant-scoped)
+  const { data: financialData, isLoading: financialLoading, error: financialError } = useFinancialData();
 
   useEffect(() => {
     fetchDashboardData();
@@ -274,7 +278,7 @@ const Dashboard = () => {
           <CardContent>
             <div className="text-2xl font-bold text-foreground">{formatAmount(stats.totalExpenses)}</div>
             <p className="text-xs text-muted-foreground">
-              Expected salaries: {formatAmount(stats.totalExpectedSalaryExpense || 0)}
+              Expected salaries: {formatAmount(financialData?.salaries?.total_expected ?? stats.totalExpectedSalaryExpense ?? 0)}
             </p>
           </CardContent>
         </Card>
@@ -288,8 +292,20 @@ const Dashboard = () => {
             <DollarSign className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-500">{formatAmount(stats.remainingFees)}</div>
-            <p className="text-xs text-muted-foreground">Outstanding amount</p>
+            {financialLoading ? (
+              <div className="text-2xl font-bold text-muted-foreground animate-pulse">Loading...</div>
+            ) : financialError ? (
+              <div className="text-sm text-destructive">Error: {financialError}</div>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-orange-500">
+                  {formatAmount(financialData?.fees?.total_remaining ?? 0)}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {financialData?.school_id ? 'Tenant-scoped' : 'Derived from server date'}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 
