@@ -96,8 +96,9 @@ export function useAIWrite(): UseAIWriteReturn {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) throw new Error('Not authenticated');
 
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fhrskehzyvaqrgfyqopg.supabase.co';
             const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-write-confirmed`,
+                `${supabaseUrl}/functions/v1/ai-write-confirmed`,
                 {
                     method: 'POST',
                     headers: {

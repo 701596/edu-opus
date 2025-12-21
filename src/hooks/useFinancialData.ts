@@ -1,17 +1,23 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-export interface DerivedFeeData {
-    total_expected: number;
+/**
+ * Student fee data from the server.
+ * All values are pre-calculated by the database trigger.
+ * Frontend is READ-ONLY - no calculations here.
+ */
+export interface StudentFeeData {
+    student_id: string;
+    name: string;
+    expected_fee: number;
     total_paid: number;
+    remaining_fee: number;  // Can be negative for advanced payments
+    status: 'unpaid' | 'partial' | 'paid' | 'advanced';
+}
+
+export interface DerivedFeeData {
     total_remaining: number;
-    students: Array<{
-        id: string;
-        name: string;
-        expected_fee: number;
-        paid_fee: number;
-        remaining_fee: number;
-    }>;
+    students: StudentFeeData[];
 }
 
 export interface DerivedSalaryData {
@@ -21,8 +27,6 @@ export interface DerivedSalaryData {
 }
 
 export interface FinancialData {
-    school_id?: string;
-    server_date: string;
     fees: DerivedFeeData;
     salaries: DerivedSalaryData;
 }
@@ -35,8 +39,11 @@ interface UseFinancialDataReturn {
 }
 
 /**
- * Hook to fetch time-based derived financial data from the server.
- * All calculations use the server date, not static stored values.
+ * Hook to fetch derived financial data from the server.
+ * 
+ * IMPORTANT: This hook is READ-ONLY.
+ * All calculations are performed by the database trigger on payment changes.
+ * The Edge Function simply reads and returns the pre-calculated values.
  */
 export function useFinancialData(): UseFinancialDataReturn {
     const [data, setData] = useState<FinancialData | null>(null);
@@ -51,24 +58,36 @@ export function useFinancialData(): UseFinancialDataReturn {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) throw new Error('Not authenticated');
 
-            const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/financial-calc`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${session.access_token}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+            const { data: result, error: invokeError } = await supabase.functions.invoke('calculate-remaining-fees', {
+                method: 'POST',
+            });
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to fetch financial data');
+            if (invokeError) {
+                console.error('Function invocation error:', invokeError);
+                throw new Error(invokeError.message || 'Failed to fetch financial data');
             }
 
-            const result = await response.json();
-            setData(result);
+            // Map the Edge Function response to our interface
+            const mappedResult: FinancialData = {
+                fees: {
+                    total_remaining: result.total_student_outstanding ?? 0,
+                    students: (result.students || []).map((s: any) => ({
+                        student_id: s.student_id,
+                        name: s.name ?? '',
+                        expected_fee: s.expected_fee ?? 0,
+                        total_paid: s.total_paid ?? 0,
+                        remaining_fee: s.remaining_fee ?? 0,
+                        status: s.status ?? 'unpaid'
+                    }))
+                },
+                salaries: {
+                    total_expected: 0,
+                    total_paid: 0,
+                    total_remaining: 0
+                }
+            };
+
+            setData(mappedResult);
         } catch (err: any) {
             console.error('Financial data error:', err);
             setError(err.message || 'Failed to load financial data');
@@ -83,3 +102,4 @@ export function useFinancialData(): UseFinancialDataReturn {
 
     return { data, isLoading, error, refresh };
 }
+

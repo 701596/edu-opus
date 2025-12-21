@@ -19,7 +19,7 @@ export interface StudentQueryResult {
 }
 
 // Explicit column selection to avoid fetching heavy search_vector
-const STUDENT_COLUMNS = 'id, name, email, phone, address, date_of_birth, class, enrollment_date, payment_status, guardian_name, guardian_phone, created_at, updated_at, user_id, expected_fee, paid_fee, remaining_fee, fee_amount, fee_type, join_date, metadata, student_id, total_fee';
+const STUDENT_COLUMNS = 'id, name, email, phone, address, date_of_birth, class, enrollment_date, payment_status, guardian_name, guardian_phone, created_at, updated_at, user_id, fee_amount, fee_type, join_date, metadata, student_id';
 
 /**
  * Fetch paginated students ordered by created_at DESC (most recent first)

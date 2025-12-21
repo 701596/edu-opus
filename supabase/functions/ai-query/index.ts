@@ -66,7 +66,12 @@ serve(async (req: Request) => {
 
     try {
         const authHeader = req.headers.get('Authorization')
-        if (!authHeader) return new Response('Missing auth', { status: 401, headers: corsHeaders })
+        if (!authHeader) {
+            return new Response(JSON.stringify({ ok: false, error: 'Missing authorization header' }), {
+                status: 401,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+        }
 
         // 🟢 1. INFRA: SERVICE ROLE CLIENT
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing Server Env Vars");
@@ -75,7 +80,12 @@ serve(async (req: Request) => {
         const token = authHeader.replace('Bearer ', '')
         const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
 
-        if (userError || !user) return new Response('Invalid token', { status: 401, headers: corsHeaders })
+        if (userError || !user) {
+            return new Response(JSON.stringify({ ok: false, error: 'Invalid or expired token' }), {
+                status: 401,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+        }
 
         // 2. School Membership Check
         const { data: memberships, error: memberError } = await supabaseAdmin
@@ -86,11 +96,21 @@ serve(async (req: Request) => {
             .limit(1)
 
         if (memberError) logDbError("school_members", memberError, { user_id: user.id });
-        if (!memberships?.length) return new Response('Access denied: No active school membership', { status: 403, headers: corsHeaders })
+        if (!memberships?.length) {
+            return new Response(JSON.stringify({ ok: false, error: 'Access denied: No active school membership' }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+        }
         const school_id = memberships[0].school_id
 
         const { message, session_id } = await req.json()
-        if (!message) return new Response('Message required', { status: 400, headers: corsHeaders })
+        if (!message) {
+            return new Response(JSON.stringify({ ok: false, error: 'Message is required' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+        }
 
         // 3. IDENTITY EXTRACTION (REGEX)
         const nameRegex = /(?:my name is|call me|i am)\s+([a-zA-Z]+)/i;
@@ -279,7 +299,9 @@ ${PLATFORM_BLUEPRINT}`
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
     } catch (error: any) {
-        console.error("AXIOM FATAL", error)
-        return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders })
+        return new Response(JSON.stringify({ ok: false, error: error.message || 'Internal server error' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
     }
 })

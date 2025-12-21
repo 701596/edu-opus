@@ -130,8 +130,11 @@ export function useAI(): UseAIReturn {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) throw new Error('Not authenticated');
 
+            // Use the same Supabase URL as client.ts
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://fhrskehzyvaqrgfyqopg.supabase.co';
+
             const response = await fetch(
-                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-query`,
+                `${supabaseUrl}/functions/v1/ai-query`,
                 {
                     method: 'POST',
                     headers: {
@@ -151,15 +154,31 @@ export function useAI(): UseAIReturn {
                 await new Promise(resolve => setTimeout(resolve, 500 - elapsed));
             }
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'AI request failed');
+            // Defensive JSON parsing - NEVER call .json() blindly
+            let data: any = null;
+            try {
+                const text = await response.text();
+                if (text) {
+                    data = JSON.parse(text);
+                }
+            } catch (parseError) {
+                console.error('JSON Parse Error:', parseError);
+                throw new Error('Server returned an invalid response. Please try again.');
             }
 
-            const data = await response.json();
+            // Handle non-ok responses
+            if (!response.ok) {
+                const errorMessage = data?.error || `Request failed with status ${response.status}`;
+                throw new Error(errorMessage);
+            }
+
+            // Handle ok:false responses
+            if (data?.ok === false) {
+                throw new Error(data.error || 'An error occurred');
+            }
 
             // If new session started, update ID
-            if (data.session_id && data.session_id !== currentSessionId) {
+            if (data?.session_id && data.session_id !== currentSessionId) {
                 setCurrentSessionId(data.session_id);
                 // Also Refresh Session List
                 loadSessions();
@@ -167,7 +186,7 @@ export function useAI(): UseAIReturn {
 
             const assistantMessage: AIMessage = {
                 role: 'assistant',
-                content: data.message,
+                content: data?.message || 'No response received',
                 timestamp: new Date()
             };
             setMessages(prev => [...prev, assistantMessage]);
@@ -181,6 +200,7 @@ export function useAI(): UseAIReturn {
             setIsLoading(false);
         }
     }, [currentSessionId]);
+
 
     return {
         messages,

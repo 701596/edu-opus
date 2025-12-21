@@ -71,9 +71,8 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
       if (joinDate) updates.join_date = joinDate;
 
       // Update all selected students
-      // The database triggers will automatically recalculate expected_fee, remaining_fee, and payment_status
       const selectedStudentsList = Array.from(selectedStudents);
-      
+
       for (const studentId of selectedStudentsList) {
         const { error } = await supabase
           .from('students')
@@ -83,16 +82,13 @@ export const BulkEditStudents = ({ students, onEditComplete }: BulkEditStudentsP
         if (error) throw error;
       }
 
-      // Wait a moment for triggers to complete and real-time updates to propagate
-      await new Promise(resolve => setTimeout(resolve, 500));
-
       setUpdating(false);
       setIsOpen(false);
       setSelectedStudents(new Set());
       setFeeAmount('');
       setFeeType('');
       setJoinDate('');
-      
+
       toast({
         title: 'Success',
         description: `Updated ${selectedStudentsList.length} student(s). Fees recalculated automatically.`

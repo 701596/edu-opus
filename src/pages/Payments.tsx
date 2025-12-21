@@ -99,13 +99,32 @@ const Payments = () => {
       const from = (currentPage - 1) * ITEMS_PER_PAGE;
       const to = from + ITEMS_PER_PAGE - 1;
 
+      // Pre-fetch student IDs if searching by name (to duplicate ILIKE behavior on foreign table)
+      let matchingStudentIds: string[] = [];
+      if (debouncedSearch && debouncedSearch.trim()) {
+        const { data: students } = await supabase
+          .from('students')
+          .select('id')
+          .ilike('name', `%${debouncedSearch.trim()}%`)
+          .limit(50); // Reasonable limit for ID list
+
+        if (students) matchingStudentIds = students.map(s => s.id);
+      }
+
       // Get total count first
       let countQuery = supabase
         .from('payments')
         .select('*', { count: 'exact', head: true });
 
       if (debouncedSearch) {
-        countQuery = countQuery.textSearch('search_vector', debouncedSearch.split(' ').join(' & '));
+        const searchTerm = `%${debouncedSearch.trim()}%`;
+        let orConditions = `receipt_number.ilike.${searchTerm},category.ilike.${searchTerm},payment_method.ilike.${searchTerm}`;
+
+        if (matchingStudentIds.length > 0) {
+          orConditions += `,student_id.in.(${matchingStudentIds.join(',')})`;
+        }
+
+        countQuery = countQuery.or(orConditions);
       }
 
       const { count, error: countError } = await countQuery;
@@ -134,12 +153,20 @@ const Payments = () => {
         .range(from, to);
 
       if (debouncedSearch) {
-        query = query.textSearch('search_vector', debouncedSearch.split(' ').join(' & '));
+        const searchTerm = `%${debouncedSearch.trim()}%`;
+        let orConditions = `receipt_number.ilike.${searchTerm},category.ilike.${searchTerm},payment_method.ilike.${searchTerm}`;
+
+        if (matchingStudentIds.length > 0) {
+          orConditions += `,student_id.in.(${matchingStudentIds.join(',')})`;
+        }
+
+        query = query.or(orConditions);
       }
 
       const { data, error } = await query;
       if (error) throw error;
       setPayments(data || []);
+
     } catch (error) {
       console.error('Error fetching payments:', error);
       toast({

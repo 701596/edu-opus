@@ -97,7 +97,7 @@ const Reports = () => {
         totalExpenses,
         totalSalaries: Number(summary.total_salaries) || 0,
         totalFeeFolders: Number(summary.total_fee_folders) || 0,
-        remainingFees: Number(summary.remaining_fees) || 0,
+        remainingFees: 0, // Driven by useFinancialData hook
         netProfit,
         profitMargin,
         expectedSalaryExpense: Number(summary.expected_salary_expense) || 0,
@@ -135,7 +135,7 @@ const Reports = () => {
         feeFoldersResponse,
         staffResponse
       ] = await Promise.all([
-        supabase.from('students').select('paid_fee, remaining_fee').limit(1000),
+        supabase.from('students').select('paid_fee').limit(1000),
         supabase.from('expenses').select('amount, category').limit(1000),
         supabase.from('salaries').select('net_amount').limit(500),
         supabase.from('fee_folders').select('amount_due').limit(500),
@@ -153,7 +153,7 @@ const Reports = () => {
       const totalSalaries = salaries.reduce((sum, s) => sum + Number(s.net_amount || 0), 0);
       const totalExpenses = totalExpensesAmount + totalSalaries;
       const totalFeeFolders = feeFolders.reduce((sum, f) => sum + Number(f.amount_due || 0), 0);
-      const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
+      const remainingFees = 0; // Driven by server date
       const expectedSalaryExpense = staff.reduce((sum, s) => sum + Number((s as Record<string, unknown>).expected_salary_expense || 0), 0);
       const netProfit = totalIncome - totalExpenses;
       const profitMargin = totalExpenses > 0 ? (netProfit / totalExpenses) * 100 : (totalIncome > 0 ? 100 : 0);

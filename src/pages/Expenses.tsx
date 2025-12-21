@@ -93,7 +93,8 @@ const Expenses = () => {
         .select('*', { count: 'exact', head: true });
 
       if (debouncedSearch) {
-        countQuery = countQuery.textSearch('search_vector', debouncedSearch.split(' ').join(' & '));
+        const searchTerm = `%${debouncedSearch.trim()}%`;
+        countQuery = countQuery.or(`description.ilike.${searchTerm},category.ilike.${searchTerm}`);
       }
 
       const { count, error: countError } = await countQuery;
@@ -116,8 +117,10 @@ const Expenses = () => {
         .range(from, to);
 
       if (debouncedSearch) {
-        query = query.textSearch('search_vector', debouncedSearch.split(' ').join(' & '));
+        const searchTerm = `%${debouncedSearch.trim()}%`;
+        query = query.or(`description.ilike.${searchTerm},category.ilike.${searchTerm}`);
       }
+
 
       const { data, error } = await query;
       if (error) throw error;

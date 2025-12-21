@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,22 +60,32 @@ const Students = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
+  // Throttle ref for real-time subscription
+  const lastRealtimeFetchRef = useRef<number>(0);
+
   const { toast } = useToast();
   const { formatAmount } = useCurrency();
 
   // Derived financial data (time-based, server-driven)
   const { data: financialData } = useFinancialData();
 
-  // Build lookup map for per-student derived fees
+  // Build lookup map for per-student derived fees (from database trigger)
+  // Frontend is READ-ONLY - all values come from the server
   const derivedFeesMap = useMemo(() => {
-    const map = new Map<string, { expected_fee: number; paid_fee: number; remaining_fee: number }>();
+    const map = new Map<string, { remaining_fee: number; status: string; total_paid: number }>();
     if (financialData?.fees?.students) {
       for (const s of financialData.fees.students) {
-        map.set(s.id, s);
+        map.set(s.student_id, {
+          remaining_fee: s.remaining_fee,
+          status: s.status,
+          total_paid: s.total_paid
+        });
       }
     }
     return map;
   }, [financialData]);
+
+
 
   const form = useForm<z.infer<typeof studentSchema>>({
     resolver: zodResolver(studentSchema),
@@ -104,18 +114,8 @@ const Students = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  useEffect(() => {
-    fetchStudents();
-
-    const channel = supabase
-      .channel('students-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, fetchStudents)
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [currentPage, debouncedSearch]);
-
-  const fetchStudents = async () => {
+  // Fetch students with memoized callback
+  const fetchStudents = useCallback(async () => {
     setLoading(true);
     try {
       const from = (currentPage - 1) * pageSize;
@@ -123,22 +123,15 @@ const Students = () => {
 
       let query = supabase
         .from('students')
-        .select('*, total_fee, remaining_fee, payment_status', { count: 'exact' })
+        .select('*, payment_status', { count: 'exact' })
+        .eq('is_archived', false)
         .order('created_at', { ascending: false });
 
-      // Add search filter if query exists
+      // Server-side ILIKE search across name, class, guardian_name
+      // Applied BEFORE pagination
       if (debouncedSearch && debouncedSearch.trim()) {
-        const tsQuery = debouncedSearch
-          .trim()
-          .split(/\s+/)
-          .filter(Boolean)
-          .map(term => `${term}:*`)
-          .join(' & ');
-
-        query = query.textSearch('search_vector', tsQuery, {
-          type: 'websearch',
-          config: 'english',
-        });
+        const searchTerm = `%${debouncedSearch.trim()}%`;
+        query = query.or(`name.ilike.${searchTerm},class.ilike.${searchTerm},guardian_name.ilike.${searchTerm}`);
       }
 
       query = query.range(from, to);
@@ -154,7 +147,29 @@ const Students = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, debouncedSearch, pageSize, toast]);
+
+  // Fetch students on mount and when dependencies change
+  useEffect(() => {
+    fetchStudents();
+
+    // Throttled handler for real-time updates
+    const throttledFetch = () => {
+      const now = Date.now();
+      if (now - lastRealtimeFetchRef.current > 2000) {
+        lastRealtimeFetchRef.current = now;
+        fetchStudents();
+      }
+    };
+
+    const channel = supabase
+      .channel('students-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, throttledFetch)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchStudents]);
+
 
   const onSubmit = async (data: z.infer<typeof studentSchema>) => {
     if (!user) return;
@@ -616,19 +631,27 @@ const Students = () => {
                       <TableCell className="font-semibold text-primary">
                         {formatAmount(Number((student as any).total_fee || student.fee_amount || 0))}
                       </TableCell>
-                      <TableCell className="font-semibold text-orange-600">
-                        {formatAmount(derivedFeesMap.get(student.id)?.remaining_fee ?? Number((student as any).remaining_fee || 0))}
+                      <TableCell className={`font-semibold ${(derivedFeesMap.get(student.id)?.remaining_fee ?? 0) < 0 ? 'text-green-600' : 'text-orange-600'}`}>
+                        {formatAmount(derivedFeesMap.get(student.id)?.remaining_fee ?? 0)}
                       </TableCell>
+
                       <TableCell>
-                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${(student as any).payment_status === 'paid'
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-                          : (student as any).payment_status === 'partial'
-                            ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'
-                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                          }`}>
-                          {(student as any).payment_status || 'pending'}
-                        </span>
+                        {(() => {
+                          const status = derivedFeesMap.get(student.id)?.status || 'unpaid';
+                          const statusColors = {
+                            paid: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
+                            partial: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
+                            advanced: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+                            unpaid: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                          };
+                          return (
+                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusColors[status as keyof typeof statusColors]}`}>
+                              {status}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
+
                       <TableCell>
                         <div className="flex space-x-2">
                           <Button variant="outline" size="sm" onClick={() => handleEdit(student)}>

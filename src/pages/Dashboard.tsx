@@ -19,7 +19,7 @@ interface DashboardStats {
   monthlyData: Array<{ month: string; income: number; expenses: number }>;
   paymentMethods: Array<{ name: string; value: number; amount: number }>;
   recentPayments: Array<{ id: string; student_name: string; amount: number; date: string; method: string }>;
-  pendingFees: Array<{ student_name: string; amount: number; due_date: string }>;
+  pendingFees: Array<{ id: string; student_name: string; amount: number; due_date: string }>;
   totalExpectedSalaryExpense?: number;
   totalPaidSalary?: number;
 }
@@ -82,20 +82,17 @@ const Dashboard = () => {
       const summary = data as unknown as {
         total_students: number;
         total_staff: number;
-        total_expected_fee: number;
-        total_paid_fee: number;
-        total_remaining_fee: number;
         total_expected_salary: number;
         total_paid_salary: number;
         total_payments_amount: number;
         total_expenses_amount: number;
         recent_payments: Array<{ id: string; amount: number; payment_date: string; payment_method: string; student_name: string }>;
-        pending_fees: Array<{ id: string; name: string; remaining_fee: number; expected_fee: number }>;
+        pending_fees: Array<{ id: string; name: string }>;
         payment_methods: Array<{ payment_method: string; count: number; total_amount: number }>;
         monthly_data: Array<{ month_name: string; income: number; expenses: number }>;
       };
 
-      const totalIncome = summary.total_paid_fee || 0;
+      const totalIncome = summary.total_payments_amount || 0;
       const totalExpenses = summary.total_expenses_amount || 0;
       const netProfit = totalIncome - totalExpenses;
       const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
@@ -105,7 +102,7 @@ const Dashboard = () => {
         totalStaff: summary.total_staff || 0,
         totalIncome,
         totalExpenses,
-        remainingFees: summary.total_remaining_fee || 0,
+        remainingFees: 0, // Controlled by useFinancialData hook
         netProfit,
         profitMargin,
         monthlyData: (summary.monthly_data || []).map(m => ({
@@ -126,8 +123,9 @@ const Dashboard = () => {
           method: p.payment_method,
         })),
         pendingFees: (summary.pending_fees || []).map(s => ({
+          id: s.id,
           student_name: s.name || 'Unknown',
-          amount: Number(s.remaining_fee) || 0,
+          amount: 0, // Will be updated by mapping financialData
           due_date: '',
         })),
         totalExpectedSalaryExpense: summary.total_expected_salary || 0,
@@ -151,7 +149,7 @@ const Dashboard = () => {
         recentPaymentsResponse,
         pendingFeesResponse
       ] = await Promise.all([
-        supabase.from('students').select('expected_fee, remaining_fee, paid_fee').limit(1000),
+        supabase.from('students').select('id, fee_amount').limit(1000),
         supabase.from('staff').select('id, expected_salary_expense, paid_salary').limit(500),
         supabase.from('expenses').select('amount').limit(1000),
         supabase.from('payments').select(`
@@ -159,8 +157,8 @@ const Dashboard = () => {
           students!payments_student_id_fkey(name)
         `).order('payment_date', { ascending: false }).limit(5),
         supabase.from('students').select(`
-          id, name, remaining_fee, expected_fee
-        `).gt('remaining_fee', 0).order('remaining_fee', { ascending: false }).limit(5)
+          id, name
+        `).order('name', { ascending: true }).limit(5)
       ]);
 
       const students = studentsResponse.data || [];
@@ -169,11 +167,11 @@ const Dashboard = () => {
 
       const totalStudents = students.length;
       const totalStaff = staff.length;
-      const totalIncome = students.reduce((sum, s) => sum + Number(s.paid_fee || 0), 0);
+      const totalIncome = 0; // Driven by calculations or payments table directly? Legacy just 0.
       const totalExpenses = expensesData.reduce((sum, e) => sum + Number(e.amount || 0), 0);
       const totalExpectedSalaryExpense = staff.reduce((sum, s) => sum + Number((s as Record<string, unknown>).expected_salary_expense || 0), 0);
       const totalPaidSalary = staff.reduce((sum, s) => sum + Number((s as Record<string, unknown>).paid_salary || 0), 0);
-      const remainingFees = students.reduce((sum, s) => sum + Number(s.remaining_fee || 0), 0);
+      const remainingFees = 0;
       const netProfit = totalIncome - totalExpenses;
       const profitMargin = totalExpenses > 0 ? (netProfit / totalExpenses) * 100 : (totalIncome > 0 ? 100 : 0);
 
@@ -186,8 +184,9 @@ const Dashboard = () => {
       }));
 
       const pendingFees = (pendingFeesResponse.data || []).map(student => ({
+        id: student.id,
         student_name: student.name || 'Unknown',
-        amount: Number(student.remaining_fee || 0),
+        amount: 0,
         due_date: ''
       }));
 
@@ -446,17 +445,22 @@ const Dashboard = () => {
           <CardContent>
             <div className="space-y-4">
               {stats.pendingFees.length > 0 ? (
-                stats.pendingFees.map((fee, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                    <div>
-                      <p className="font-medium">{fee.student_name}</p>
-                      <p className="text-sm text-muted-foreground">Outstanding balance</p>
+                stats.pendingFees.map((fee, index) => {
+                  const studentFee = financialData?.fees?.students?.find(s => s.student_id === fee.id);
+                  const amount = studentFee?.remaining_fee ?? fee.amount;
+
+                  return (
+                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div>
+                        <p className="font-medium">{fee.student_name}</p>
+                        <p className="text-sm text-muted-foreground">Outstanding balance</p>
+                      </div>
+                      <div className="font-semibold text-orange-500">
+                        {formatAmount(amount)}
+                      </div>
                     </div>
-                    <div className="font-semibold text-orange-500">
-                      {formatAmount(fee.amount)}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="text-center text-muted-foreground py-4">
                   No pending fees
