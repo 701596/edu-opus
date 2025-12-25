@@ -413,8 +413,75 @@ const RemainingFees = () => {
 
   if (loading && feeFolders.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="space-y-6 animate-fade-in">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded bg-muted animate-pulse" />
+              <div className="h-8 w-32 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="h-4 w-72 bg-muted rounded animate-pulse" />
+          </div>
+          <div className="h-9 w-32 bg-muted rounded animate-pulse" />
+        </div>
+
+        {/* Search Bar Skeleton */}
+        <div className="h-10 w-80 bg-muted rounded animate-pulse" />
+
+        {/* 2 Summary Cards Skeleton */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="bg-card rounded-lg p-6 border">
+              <div className="flex justify-between items-center mb-2">
+                <div className="h-4 w-40 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+              </div>
+              <div className="h-8 w-28 bg-muted rounded animate-pulse mb-1" />
+              <div className="h-3 w-32 bg-muted rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        {/* Table Card Skeleton */}
+        <div className="bg-card rounded-lg border">
+          <div className="p-6 border-b">
+            <div className="h-5 w-24 bg-muted rounded animate-pulse" />
+          </div>
+          <div className="p-6 overflow-x-auto">
+            {/* Table Header - 10 columns */}
+            <div className="grid grid-cols-10 gap-3 pb-3 border-b min-w-[1000px]">
+              <div className="h-4 w-6 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-14 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-14 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+            </div>
+            {/* Table Rows */}
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="grid grid-cols-10 gap-3 py-4 border-b last:border-0 min-w-[1000px]">
+                <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-16 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+                <div className="h-6 w-16 bg-muted rounded-full animate-pulse" />
+                <div className="flex gap-2">
+                  <div className="h-8 w-8 bg-muted rounded animate-pulse" />
+                  <div className="h-8 w-8 bg-muted rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }

@@ -6,9 +6,16 @@
 ALTER TABLE public.reports 
 DROP CONSTRAINT IF EXISTS reports_month_start_key;
 
--- Step 2: Add correct tenant-scoped unique constraint
-ALTER TABLE public.reports 
-ADD CONSTRAINT reports_user_month_unique UNIQUE (user_id, month_start);
+-- Step 2: Add correct tenant-scoped unique constraint (idempotent)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'reports_user_month_unique'
+    ) THEN
+        ALTER TABLE public.reports 
+        ADD CONSTRAINT reports_user_month_unique UNIQUE (user_id, month_start);
+    END IF;
+END $$;
 
 -- Step 3: Update recalc_monthly_report function to use upsert
 -- This ensures it won't fail on duplicate entries

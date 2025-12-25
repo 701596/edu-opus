@@ -186,8 +186,71 @@ const Reports = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="space-y-6 animate-fade-in">
+        {/* Header Skeleton */}
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded bg-muted animate-pulse" />
+            <div className="h-8 w-24 bg-muted rounded animate-pulse" />
+          </div>
+          <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+        </div>
+
+        {/* 3 Key Metric Cards Skeleton */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-card rounded-lg p-6 border">
+              <div className="flex justify-between items-center mb-2">
+                <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+              </div>
+              <div className="h-8 w-24 bg-muted rounded animate-pulse mb-1" />
+              <div className="h-3 w-28 bg-muted rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        {/* 3 Financial Health Cards Skeleton */}
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="bg-card rounded-lg p-6 border">
+              <div className="flex justify-between items-center mb-2">
+                <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+                <div className="h-4 w-4 bg-muted rounded animate-pulse" />
+              </div>
+              <div className="h-8 w-20 bg-muted rounded animate-pulse mb-1" />
+              <div className="h-3 w-24 bg-muted rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        {/* 2 Charts Skeleton */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="bg-card rounded-lg p-6 border">
+              <div className="h-5 w-40 bg-muted rounded animate-pulse mb-4" />
+              <div className="h-[300px] bg-muted rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+
+        {/* Payment Methods Skeleton */}
+        <div className="bg-card rounded-lg p-6 border">
+          <div className="h-5 w-48 bg-muted rounded animate-pulse mb-4" />
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="p-4 border rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+                  <div className="h-3 w-3 bg-muted rounded-full animate-pulse" />
+                </div>
+                <div className="h-8 w-12 bg-muted rounded animate-pulse mt-2" />
+                <div className="h-3 w-20 bg-muted rounded animate-pulse mt-1" />
+                <div className="h-5 w-24 bg-muted rounded animate-pulse mt-2" />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }

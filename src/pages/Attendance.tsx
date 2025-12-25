@@ -362,8 +362,39 @@ export default function Attendance() {
 
                 {/* Student List */}
                 {isLoading ? (
-                    <div className="flex justify-center py-12">
-                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <div className="space-y-6">
+                        {/* 2 Charts Skeleton (Analytics Dashboard) */}
+                        <div className="grid gap-6 md:grid-cols-2">
+                            {[...Array(2)].map((_, i) => (
+                                <div key={i} className="bg-card rounded-lg p-6 border">
+                                    <div className="h-5 w-40 bg-muted rounded animate-pulse mb-4" />
+                                    <div className="h-[200px] bg-muted rounded animate-pulse" />
+                                    <div className="mt-4 grid grid-cols-2 gap-4">
+                                        <div className="p-2 bg-muted/50 rounded">
+                                            <div className="h-6 w-12 mx-auto bg-muted rounded animate-pulse" />
+                                            <div className="h-3 w-20 mx-auto mt-1 bg-muted rounded animate-pulse" />
+                                        </div>
+                                        <div className="p-2 bg-muted/50 rounded">
+                                            <div className="h-6 w-8 mx-auto bg-muted rounded animate-pulse" />
+                                            <div className="h-3 w-20 mx-auto mt-1 bg-muted rounded animate-pulse" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {/* Student Cards Skeleton */}
+                        <div className="space-y-2">
+                            {[...Array(8)].map((_, i) => (
+                                <div key={i} className="bg-card rounded-lg border p-4 flex items-center justify-between">
+                                    <div className="h-5 w-32 bg-muted rounded animate-pulse" />
+                                    <div className="flex gap-1">
+                                        <div className="h-8 w-8 bg-muted rounded animate-pulse" />
+                                        <div className="h-8 w-8 bg-muted rounded animate-pulse" />
+                                        <div className="h-8 w-8 bg-muted rounded animate-pulse" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ) : students.length === 0 ? (
                     <Alert>

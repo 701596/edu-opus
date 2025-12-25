@@ -116,6 +116,9 @@ const Students = () => {
 
   // Fetch students with memoized callback
   const fetchStudents = useCallback(async () => {
+    // Guard: prevent query without auth
+    if (!user?.id) return;
+
     setLoading(true);
     try {
       const from = (currentPage - 1) * pageSize;
@@ -125,6 +128,7 @@ const Students = () => {
         .from('students')
         .select('*, payment_status', { count: 'exact' })
         .eq('is_archived', false)
+        .eq('user_id', user.id)  // Defense-in-depth: explicit tenant filter
         .order('created_at', { ascending: false });
 
       // Server-side ILIKE search across name, class, guardian_name
@@ -147,7 +151,7 @@ const Students = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedSearch, pageSize, toast]);
+  }, [currentPage, debouncedSearch, pageSize, toast, user?.id]);
 
   // Fetch students on mount and when dependencies change
   useEffect(() => {
@@ -337,10 +341,57 @@ const Students = () => {
     }
   };
 
+  // Skeleton row component - matches 8 columns of the table
+  const SkeletonRow = () => (
+    <TableRow>
+      <TableCell><div className="h-4 w-4 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-4 w-32 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-4 w-16 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-4 w-24 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-4 w-20 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-4 w-20 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-4 w-16 bg-muted rounded animate-pulse" /></TableCell>
+      <TableCell><div className="h-6 w-16 bg-muted rounded animate-pulse" /></TableCell>
+    </TableRow>
+  );
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="space-y-6 animate-fade-in">
+        {/* Header skeleton */}
+        <div className="flex justify-between items-center">
+          <div className="space-y-2">
+            <div className="h-8 w-32 bg-muted rounded animate-pulse" />
+            <div className="h-4 w-48 bg-muted rounded animate-pulse" />
+          </div>
+          <div className="h-10 w-32 bg-muted rounded animate-pulse" />
+        </div>
+
+        {/* Table skeleton */}
+        <Card className="bg-gradient-to-br from-card via-card to-accent/5 border-0 shadow-card">
+          <CardHeader>
+            <div className="h-6 w-32 bg-muted rounded animate-pulse" />
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12"><div className="h-4 w-4 bg-muted rounded" /></TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Class</TableHead>
+                  <TableHead>Guardian</TableHead>
+                  <TableHead>Total Fee</TableHead>
+                  <TableHead>Remaining Fee</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[...Array(5)].map((_, i) => <SkeletonRow key={i} />)}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     );
   }
