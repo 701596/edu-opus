@@ -1,413 +1,375 @@
 /**
- * Accept Invite Page
+ * Accept Staff Invite Page
  * 
- * Secure invitation acceptance flow:
- * 1. Validates invite token from URL
- * 2. If logged in → show code input → accept invite → redirect by role
- * 3. If not logged in → show auth flow → then accept
+ * Handles the magic link invite flow:
+ * 1. User lands here after clicking magic link in email
+ * 2. User is already authenticated via magic link
+ * 3. Page fetches pending invite details
+ * 4. User enters name and password
+ * 5. On submit: updates user profile, accepts invite, redirects to dashboard
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle, XCircle, School, LogIn, Shield, AlertTriangle } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { UserRole } from '@/contexts/RoleContext';
+import { toast } from 'sonner';
+import { Loader2, CheckCircle2, School, Shield, XCircle } from 'lucide-react';
 
 // =============================================
 // Types
 // =============================================
-
-type AcceptStatus =
-    | 'SUCCESS'
-    | 'INVALID_TOKEN'
-    | 'INVALID_CODE'
-    | 'EXPIRED'
-    | 'ALREADY_ACCEPTED'
-    | 'NOT_AUTHENTICATED'
-    | 'ERROR';
-
-interface AcceptInviteResponse {
-    status: AcceptStatus;
-    message?: string;
-    role?: UserRole;
+interface InviteDetails {
+    found: boolean;
+    id?: string;
     school_id?: string;
     school_name?: string;
-}
-
-interface InviteDetails {
-    id: string;
-    email: string;
-    role: UserRole;
-    school_name: string;
-    school_id: string;
-    expires_at: string;
-    is_valid: boolean;
+    role?: string;
+    expires_at?: string;
 }
 
 // =============================================
 // Component
 // =============================================
-
-export default function AcceptInvite() {
-    const { token } = useParams<{ token: string }>();
-    const [searchParams] = useSearchParams();
-    const tokenFromQuery = searchParams.get('token');
-    const inviteToken = token || tokenFromQuery;
-
+const AcceptInvite = () => {
     const navigate = useNavigate();
     const { user, loading: authLoading } = useAuth();
 
+    // State
     const [invite, setInvite] = useState<InviteDetails | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [isAccepting, setIsAccepting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [errorStatus, setErrorStatus] = useState<AcceptStatus | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [success, setSuccess] = useState(false);
-    const [securityCode, setSecurityCode] = useState('');
-    const [acceptedRole, setAcceptedRole] = useState<UserRole | null>(null);
-    const [acceptedSchoolId, setAcceptedSchoolId] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    // Form state
+    const [name, setName] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
 
     // =============================================
-    // Fetch Invite Details
+    // Fetch invite on mount
     // =============================================
     useEffect(() => {
-        async function fetchInvite() {
-            if (!inviteToken) {
-                setError('Invalid invite link - no token provided');
+        const fetchInvite = async () => {
+            if (authLoading) return;
+
+            if (!user) {
+                // User not authenticated - magic link may have failed
+                setError('Please click the magic link in your email to continue.');
                 setIsLoading(false);
                 return;
             }
 
             try {
-                // Call RPC to get invite details (public lookup)
-                const { data, error: rpcError } = await (supabase as any).rpc('get_invite_by_token', {
-                    p_token: inviteToken,
-                });
+                // Call RPC to get pending invite
+                const { data, error: rpcError } = await supabase.rpc('get_pending_invite' as any);
 
                 if (rpcError) {
-                    console.error('Invite lookup error:', rpcError);
-                    setError('Failed to load invite details');
+                    console.error('RPC error:', rpcError);
+                    setError('Failed to fetch invite details.');
                     setIsLoading(false);
                     return;
                 }
 
-                if (!data) {
-                    setError('This invite link is invalid or has expired');
-                    setErrorStatus('INVALID_TOKEN');
+                const inviteData = data as InviteDetails;
+
+                if (!inviteData?.found) {
+                    setError('No pending invite found for your email. The invite may have expired or already been used.');
                     setIsLoading(false);
                     return;
                 }
 
-                setInvite(data as InviteDetails);
+                setInvite(inviteData);
+
+                // Pre-fill name from user metadata if available
+                const fullName = user.user_metadata?.full_name || '';
+                setName(fullName);
+
             } catch (err) {
-                console.error('Fetch error:', err);
-                setError('Failed to load invite details');
+                console.error('Error fetching invite:', err);
+                setError('An unexpected error occurred.');
+            } finally {
+                setIsLoading(false);
             }
-            setIsLoading(false);
-        }
+        };
 
         fetchInvite();
-    }, [inviteToken]);
+    }, [user, authLoading]);
 
     // =============================================
-    // Accept Invite Handler
+    // Handle form submission
     // =============================================
-    const handleAcceptInvite = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        if (!inviteToken || !user) return;
-        if (!securityCode || securityCode.length !== 6) {
-            setError('Please enter the 6-character security code');
+        // Validation
+        if (!name.trim()) {
+            toast.error('Please enter your name');
             return;
         }
 
-        setIsAccepting(true);
-        setError(null);
-        setErrorStatus(null);
+        if (password.length < 6) {
+            toast.error('Password must be at least 6 characters');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            toast.error('Passwords do not match');
+            return;
+        }
+
+        setIsSubmitting(true);
 
         try {
-            // Get user's access token
-            const { data: sessionData } = await supabase.auth.getSession();
-            const accessToken = sessionData.session?.access_token;
-
-            if (!accessToken) {
-                setError('Session expired. Please log in again.');
-                setErrorStatus('NOT_AUTHENTICATED');
-                setIsAccepting(false);
-                return;
-            }
-
-            // Call secure RPC directly
-            const { data, error } = await (supabase as any).rpc('accept_invite_by_code', {
-                p_token: inviteToken,
-                p_code: securityCode.toUpperCase(),
+            // Step 1: Update user metadata (name)
+            const { error: updateError } = await supabase.auth.updateUser({
+                password,
+                data: { full_name: name.trim() },
             });
 
-            if (error) {
-                console.error('Accept error:', error);
-                setError(error.message || 'Failed to accept invite');
-                setIsAccepting(false);
-                return;
+            if (updateError) {
+                throw new Error(updateError.message);
             }
 
-            const result = data as AcceptInviteResponse;
+            // Step 2: Accept invite (join school)
+            const { data: acceptResult, error: acceptError } = await supabase.rpc('accept_staff_invite' as any);
 
-            if (result.status === 'SUCCESS') {
-                setSuccess(true);
-                setAcceptedRole(result.role || null);
-                setAcceptedSchoolId(result.school_id || null);
-
-                // Redirect after brief delay
-                setTimeout(() => {
-                    const redirectPath = getRedirectPath(result.role, result.school_id);
-                    navigate(redirectPath);
-                }, 2000);
-            } else {
-                // Handle specific error statuses
-                setErrorStatus(result.status);
-                setError(getErrorMessage(result.status, result.message));
-                setIsAccepting(false);
+            if (acceptError) {
+                throw new Error(acceptError.message);
             }
-        } catch (err) {
-            console.error('Accept error:', err);
-            setError('Failed to accept invite. Please try again.');
-            setIsAccepting(false);
+
+            const result = acceptResult as { ok: boolean; error?: string; school_id?: string; school_name?: string; role?: string };
+
+            if (!result.ok) {
+                throw new Error(result.error || 'Failed to accept invite');
+            }
+
+            // Success!
+            setSuccess(true);
+            toast.success(`Welcome to ${result.school_name || 'the school'}!`);
+
+            // Store school ID for immediate use
+            if (result.school_id) {
+                localStorage.setItem('currentSchoolId', result.school_id);
+            }
+
+            // Redirect to dashboard after brief delay
+            setTimeout(() => {
+                navigate('/dashboard');
+            }, 1500);
+
+        } catch (err: any) {
+            console.error('Accept invite error:', err);
+            toast.error(err.message || 'Failed to accept invite');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
     // =============================================
-    // Helper Functions
+    // Role display helper
     // =============================================
-
-    const getRedirectPath = (role?: UserRole, schoolId?: string): string => {
-        if (!schoolId) return '/dashboard';
-
-        switch (role) {
-            case 'teacher':
-                return `/school/${schoolId}/attendance`;
-            case 'accountant':
-            case 'cashier':
-                return `/school/${schoolId}/finance`;
-            case 'principal':
-                return `/school/${schoolId}/dashboard`;
-            default:
-                return `/school/${schoolId}/dashboard`;
-        }
-    };
-
-    const getErrorMessage = (status: AcceptStatus, message?: string): string => {
-        switch (status) {
-            case 'INVALID_TOKEN':
-                return 'This invite link is invalid or does not exist.';
-            case 'INVALID_CODE':
-                return 'The security code is incorrect. Please check and try again.';
-            case 'EXPIRED':
-                return 'This invite has expired. Please request a new one from your administrator.';
-            case 'ALREADY_ACCEPTED':
-                return 'This invite has already been used.';
-            case 'NOT_AUTHENTICATED':
-                return 'Please log in to accept this invite.';
-            default:
-                return message || 'An error occurred. Please try again.';
-        }
-    };
-
-    const getRoleInfo = (role: UserRole) => {
-        switch (role) {
-            case 'principal':
-                return { label: 'Principal', color: 'bg-purple-500', desc: 'Full administrative access' };
-            case 'accountant':
-                return { label: 'Accountant', color: 'bg-blue-500', desc: 'Finance and student management' };
-            case 'cashier':
-                return { label: 'Cashier', color: 'bg-green-500', desc: 'Fee collection access' };
-            case 'teacher':
-                return { label: 'Teacher', color: 'bg-orange-500', desc: 'Attendance marking access' };
-            default:
-                return { label: role, color: 'bg-gray-500', desc: '' };
-        }
+    const getRoleInfo = (role: string) => {
+        const roles: Record<string, { label: string; description: string; color: string }> = {
+            teacher: {
+                label: 'Teacher',
+                description: 'Manage classes, attendance, and student records',
+                color: 'text-blue-600'
+            },
+            finance: {
+                label: 'Finance Staff',
+                description: 'Manage payments, expenses, and financial reports',
+                color: 'text-green-600'
+            },
+            admin: {
+                label: 'Administrator',
+                description: 'Full access to school management features',
+                color: 'text-purple-600'
+            },
+        };
+        return roles[role] || { label: role, description: 'Staff member', color: 'text-gray-600' };
     };
 
     // =============================================
-    // Render States
+    // Loading skeleton
     // =============================================
-
-    // Loading state
     if (isLoading || authLoading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-accent/10">
-                <div className="text-center">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-                    <p className="text-muted-foreground">Loading invite details...</p>
-                </div>
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+                <Card className="w-full max-w-md">
+                    <CardHeader className="space-y-2">
+                        <div className="h-8 w-48 bg-muted rounded animate-pulse" />
+                        <div className="h-4 w-64 bg-muted rounded animate-pulse" />
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                        <div className="space-y-2">
+                            <div className="h-4 w-20 bg-muted rounded animate-pulse" />
+                            <div className="h-10 w-full bg-muted rounded animate-pulse" />
+                        </div>
+                        <div className="space-y-2">
+                            <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+                            <div className="h-10 w-full bg-muted rounded animate-pulse" />
+                        </div>
+                        <div className="h-10 w-full bg-muted rounded animate-pulse" />
+                    </CardContent>
+                </Card>
             </div>
         );
     }
 
-    // Error state (no invite found)
-    if (error && !invite) {
+    // =============================================
+    // Error state
+    // =============================================
+    if (error) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5 p-4">
-                <Card className="max-w-md w-full">
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+                <Card className="w-full max-w-md">
                     <CardHeader className="text-center">
-                        <XCircle className="h-16 w-16 text-destructive mx-auto mb-4" />
-                        <CardTitle>Invalid Invite</CardTitle>
+                        <div className="mx-auto w-12 h-12 rounded-full bg-destructive/10 flex items-center justify-center mb-4">
+                            <XCircle className="w-6 h-6 text-destructive" />
+                        </div>
+                        <CardTitle>Unable to Process Invite</CardTitle>
                         <CardDescription>{error}</CardDescription>
                     </CardHeader>
-                    <CardContent className="text-center">
-                        <Link to="/auth">
-                            <Button>Go to Login</Button>
-                        </Link>
+                    <CardContent>
+                        <Button
+                            onClick={() => navigate('/auth')}
+                            className="w-full"
+                            variant="outline"
+                        >
+                            Go to Login
+                        </Button>
                     </CardContent>
                 </Card>
             </div>
         );
     }
 
+    // =============================================
     // Success state
+    // =============================================
     if (success) {
-        const roleInfo = getRoleInfo(acceptedRole || 'teacher');
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/10 p-4">
-                <Card className="max-w-md w-full">
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+                <Card className="w-full max-w-md">
                     <CardHeader className="text-center">
-                        <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-                        <CardTitle>Welcome to {invite?.school_name}!</CardTitle>
-                        <CardDescription>
-                            You've joined as <Badge className={roleInfo.color}>{roleInfo.label}</Badge>
-                        </CardDescription>
+                        <div className="mx-auto w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-4">
+                            <CheckCircle2 className="w-6 h-6 text-green-600" />
+                        </div>
+                        <CardTitle>Welcome Aboard!</CardTitle>
+                        <CardDescription>You've successfully joined {invite?.school_name}. Redirecting to dashboard...</CardDescription>
                     </CardHeader>
-                    <CardContent className="text-center">
-                        <p className="text-muted-foreground mb-4">Redirecting to your dashboard...</p>
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                    </CardContent>
                 </Card>
             </div>
         );
     }
 
-    // Main invite view
-    const roleInfo = invite ? getRoleInfo(invite.role) : null;
+    // =============================================
+    // Main form
+    // =============================================
+    const roleInfo = invite?.role ? getRoleInfo(invite.role) : null;
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-            <Card className="max-w-md w-full">
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
+            <Card className="w-full max-w-md">
                 <CardHeader className="text-center">
-                    <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
-                        <School className="h-12 w-12 text-primary" />
+                    <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                        <School className="w-6 h-6 text-primary" />
                     </div>
                     <CardTitle className="text-2xl">You're Invited!</CardTitle>
-                    <CardDescription>
-                        You've been invited to join a school team
-                    </CardDescription>
+                    <CardDescription>Complete your account setup to join the team</CardDescription>
                 </CardHeader>
 
                 <CardContent className="space-y-6">
                     {/* Invite Details */}
-                    <div className="space-y-4 bg-accent/50 rounded-lg p-4">
-                        <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">School</span>
-                            <span className="font-semibold">{invite?.school_name}</span>
+                    <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <School className="w-4 h-4 text-muted-foreground" />
+                            <span className="text-sm text-muted-foreground">School:</span>
+                            <span className="font-medium">{invite?.school_name}</span>
                         </div>
-                        <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Your Role</span>
-                            {roleInfo && (
-                                <Badge className={roleInfo.color}>{roleInfo.label}</Badge>
-                            )}
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Access</span>
-                            <span className="text-sm">{roleInfo?.desc}</span>
-                        </div>
+                        {roleInfo && (
+                            <div className="flex items-center gap-2">
+                                <Shield className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">Role:</span>
+                                <span className={`font-medium ${roleInfo.color}`}>{roleInfo.label}</span>
+                            </div>
+                        )}
+                        {roleInfo && (
+                            <p className="text-xs text-muted-foreground pl-6">{roleInfo.description}</p>
+                        )}
                     </div>
 
-                    {/* Error Alert */}
-                    {error && (
-                        <Alert variant={errorStatus === 'INVALID_CODE' ? 'default' : 'destructive'}>
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertTitle>
-                                {errorStatus === 'INVALID_CODE' ? 'Incorrect Code' : 'Error'}
-                            </AlertTitle>
-                            <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                    )}
-
-                    {/* User not logged in */}
-                    {!user ? (
-                        <div className="space-y-4">
-                            <Alert>
-                                <Shield className="h-4 w-4" />
-                                <AlertTitle>Authentication Required</AlertTitle>
-                                <AlertDescription>
-                                    Please log in or create an account to accept this invitation.
-                                </AlertDescription>
-                            </Alert>
-                            <div className="flex gap-2">
-                                <Link to={`/auth?redirect=/invite/${inviteToken}`} className="flex-1">
-                                    <Button className="w-full">
-                                        <LogIn className="mr-2 h-4 w-4" />
-                                        Log In
-                                    </Button>
-                                </Link>
-                            </div>
+                    {/* Setup Form */}
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="name">Your Name</Label>
+                            <Input
+                                id="name"
+                                type="text"
+                                placeholder="Enter your full name"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                required
+                                disabled={isSubmitting}
+                            />
                         </div>
-                    ) : (
-                        /* User is logged in - show security code form */
-                        <form onSubmit={handleAcceptInvite} className="space-y-4">
-                            <Alert>
-                                <Shield className="h-4 w-4" />
-                                <AlertTitle>Enter Security Code</AlertTitle>
-                                <AlertDescription>
-                                    Enter the 6-character code provided by your administrator.
-                                </AlertDescription>
-                            </Alert>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="securityCode">Security Code</Label>
-                                <Input
-                                    id="securityCode"
-                                    value={securityCode}
-                                    onChange={(e) => setSecurityCode(e.target.value.toUpperCase().slice(0, 6))}
-                                    placeholder="e.g. A1B2C3"
-                                    className="text-center font-mono text-lg tracking-widest uppercase"
-                                    maxLength={6}
-                                    required
-                                    autoComplete="off"
-                                />
-                            </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="password">Create Password</Label>
+                            <Input
+                                id="password"
+                                type="password"
+                                placeholder="Minimum 6 characters"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                                minLength={6}
+                                disabled={isSubmitting}
+                            />
+                        </div>
 
-                            <Button
-                                type="submit"
-                                className="w-full"
-                                size="lg"
-                                disabled={isAccepting || securityCode.length !== 6}
-                            >
-                                {isAccepting ? (
-                                    <>
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        Verifying...
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle className="mr-2 h-4 w-4" />
-                                        Accept Invitation
-                                    </>
-                                )}
-                            </Button>
+                        <div className="space-y-2">
+                            <Label htmlFor="confirmPassword">Confirm Password</Label>
+                            <Input
+                                id="confirmPassword"
+                                type="password"
+                                placeholder="Re-enter your password"
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                required
+                                disabled={isSubmitting}
+                            />
+                        </div>
 
-                            <p className="text-center text-xs text-muted-foreground">
-                                Logged in as <strong>{user.email}</strong>
-                            </p>
-                        </form>
-                    )}
+                        <Button
+                            type="submit"
+                            className="w-full bg-gradient-to-r from-primary to-primary-glow hover:opacity-90"
+                            disabled={isSubmitting}
+                        >
+                            {isSubmitting ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Joining...
+                                </>
+                            ) : (
+                                'Join School'
+                            )}
+                        </Button>
+                    </form>
+
+                    <p className="text-xs text-center text-muted-foreground">
+                        By joining, you agree to the school's policies and terms of use.
+                    </p>
                 </CardContent>
             </Card>
         </div>
     );
-}
+};
+
+export default AcceptInvite;

@@ -13,16 +13,15 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Students from "./pages/Students";
 import Staff from "./pages/Staff";
-import Join from "./pages/Join";
+
 import Payments from "./pages/Payments";
 import Expenses from "./pages/Expenses";
 import Reports from "./pages/Reports";
 import RemainingFees from "./pages/RemainingFees";
 import RateLimitAdmin from "./pages/RateLimitAdmin";
 import Attendance from "./pages/Attendance";
-import AdminInvites from "./pages/AdminInvites";
 import SuperAI from "./pages/SuperAI";
-import { InviteProcessor } from "./components/InviteProcessor";
+import AcceptInvite from "./pages/AcceptInvite";
 
 import NotFound from "./pages/NotFound";
 
@@ -37,14 +36,13 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
-              <InviteProcessor />
+
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/auth" element={<Auth />} />
 
-                {/* Unified Join Page */}
-                <Route path="/join" element={<Join />} />
-
+                {/* Accept Invite - Public route for magic link */}
+                <Route path="/accept-invite" element={<AcceptInvite />} />
 
 
                 {/* Protected Routes */}
@@ -104,16 +102,6 @@ const App = () => (
                 } />
 
                 {/* Admin Routes */}
-                <Route path="/admin" element={
-                  <PrincipalRoute>
-                    <Layout><AdminInvites /></Layout>
-                  </PrincipalRoute>
-                } />
-                <Route path="/admin/invites" element={
-                  <PrincipalRoute>
-                    <Layout><AdminInvites /></Layout>
-                  </PrincipalRoute>
-                } />
                 <Route path="/admin/rate-limits" element={
                   <PrincipalRoute>
                     <Layout><RateLimitAdmin /></Layout>

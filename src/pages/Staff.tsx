@@ -18,6 +18,7 @@ import { StaffBatchImport } from '@/components/StaffBatchImport';
 import { BulkEditStaff } from '@/components/BulkEditStaff';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { StaffInviteDialog } from '@/components/StaffInviteDialog';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -42,8 +43,6 @@ type Staff = z.infer<typeof staffSchema> & {
   salary_type: string;
   position: string;
   last_active_at?: string;
-  invite_used_code?: string;
-  invite_used_type?: string;
 };
 
 const Staff = () => {
@@ -172,9 +171,7 @@ const Staff = () => {
 
       const mergedData = (data || []).map((s: any) => ({
         ...s,
-        last_active_at: activityMap[s.email]?.last_active_at || null,
-        invite_used_code: activityMap[s.email]?.invite_used_code || null,
-        invite_used_type: activityMap[s.email]?.invite_used_type || null
+        last_active_at: activityMap[s.email]?.last_active_at || null
       }));
 
       setStaff(mergedData as Staff[]);
@@ -428,6 +425,7 @@ const Staff = () => {
           <p className="text-muted-foreground">Manage staff members and employees</p>
         </div>
         <div className="flex gap-2">
+          <StaffInviteDialog schoolId={localStorage.getItem('currentSchoolId') || ''} onInviteSent={fetchStaff} />
           <BulkEditStaff staff={staff} onEditComplete={fetchStaff} />
           <StaffBatchImport onImportComplete={fetchStaff} />
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
@@ -603,7 +601,6 @@ const Staff = () => {
                   <TableHead>Salary Amount</TableHead>
                   <TableHead>Salary Type</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Joined Via</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -643,9 +640,6 @@ const Staff = () => {
                               {isOnline ? 'Online' : 'Offline'}
                             </span>
                           </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
-                          {staffMember.invite_used_code || '-'}
                         </TableCell>
                         <TableCell>
                           <div className="flex space-x-2">

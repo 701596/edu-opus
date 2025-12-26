@@ -1,7 +1,4 @@
 project_id = "fhrskehzyvaqrgfyqopg"
 
-[functions.create-staff-invite]
-verify_jwt = true
-
-[functions.accept-staff-invite]
+[functions.send-staff-invite]
 verify_jwt = true
