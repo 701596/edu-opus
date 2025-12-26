@@ -11,6 +11,7 @@ interface InviteRequest {
     email: string;
     role: "teacher" | "finance" | "admin";
     school_id: string;
+    resend?: boolean;
 }
 
 Deno.serve(async (req: Request) => {
@@ -111,34 +112,60 @@ Deno.serve(async (req: Request) => {
             .eq("email", email.toLowerCase())
             .eq("school_id", school_id)
             .is("used_at", null)
-            .gt("expires_at", new Date().toISOString())
             .single();
 
+        let inviteId;
+
+        // Handle existing invite
         if (existingInvite) {
-            return new Response(
-                JSON.stringify({ ok: false, error: "An active invite already exists for this email" }),
-                { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-        }
+            const isExpired = new Date(existingInvite.expires_at) < new Date();
+            const shouldResend = body.resend === true;
 
-        // Create invite record
-        const { data: invite, error: insertError } = await adminClient
-            .from("staff_invites")
-            .insert({
-                email: email.toLowerCase(),
-                school_id,
-                role,
-                invited_by: user.id,
-            })
-            .select()
-            .single();
+            if (!isExpired && !shouldResend) {
+                return new Response(
+                    JSON.stringify({ ok: false, error: "An active invite already exists for this email" }),
+                    { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+            }
 
-        if (insertError) {
-            console.error("Insert error:", insertError);
-            return new Response(
-                JSON.stringify({ ok: false, error: "Failed to create invite" }),
-                { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
+            // If expired or resending, update the existing invite
+            const { data: updatedInvite, error: updateError } = await adminClient
+                .from("staff_invites")
+                .update({
+                    role,
+                    invited_by: user.id,
+                    created_at: new Date().toISOString(), // effectively "new"
+                    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+                })
+                .eq("id", existingInvite.id)
+                .select()
+                .single();
+
+            if (updateError) {
+                throw updateError;
+            }
+            inviteId = updatedInvite.id;
+        } else {
+            // Create new invite
+            const { data: invite, error: insertError } = await adminClient
+                .from("staff_invites")
+                .insert({
+                    email: email.toLowerCase(),
+                    school_id,
+                    role,
+                    invited_by: user.id,
+                })
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error("Insert error:", insertError);
+                return new Response(
+                    JSON.stringify({ ok: false, error: "Failed to create invite" }),
+                    { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+                );
+            }
+            inviteId = invite.id;
         }
 
         // Get school name for the email
@@ -150,43 +177,52 @@ Deno.serve(async (req: Request) => {
 
         const schoolName = school?.name || "the school";
 
-        // Generate magic link using Supabase Auth Admin API
-        // This will send an email via the configured SMTP (Google)
-        const redirectUrl = `${req.headers.get("origin") || "https://edu-opus.vercel.app"}/accept-invite`;
+        // Send invite email using Supabase's native inviteUserByEmail
+        // This effectively sends a magic link (password reset / setup link) via the configured SMTP (Gmail)
+        const origin = req.headers.get("origin");
 
-        const { data: magicLinkData, error: magicLinkError } = await adminClient.auth.admin.generateLink({
-            type: "magiclink",
-            email: email.toLowerCase(),
-            options: {
-                redirectTo: redirectUrl,
+        // Construct redirect URL
+        // MUST point to /accept-invite
+        // Use origin if available, otherwise fallback to known production URL
+        // We use a specific env var for SITE_URL if set, or default
+        const siteUrl = Deno.env.get("SITE_URL") || origin || "https://edu-opus.vercel.app";
+        const redirectUrl = `${siteUrl.replace(/\/+$/, "")}/accept-invite`;
+
+        const { data: inviteData, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
+            email.toLowerCase(),
+            {
                 data: {
-                    invite_id: invite.id,
                     school_id,
                     role,
+                    invite_id: inviteId,
                 },
-            },
-        });
+                redirectTo: redirectUrl,
+            }
+        );
 
-        if (magicLinkError) {
-            console.error("Magic link error:", magicLinkError);
-            // Rollback invite
-            await adminClient.from("staff_invites").delete().eq("id", invite.id);
+        if (inviteError) {
+            console.error("Invite email error:", inviteError);
+            // Rollback invite record (only if it was new? Actually hard to rollback update. Just log it.)
+            if (!existingInvite) {
+                await adminClient.from("staff_invites").delete().eq("id", inviteId);
+            }
             return new Response(
-                JSON.stringify({ ok: false, error: "Failed to generate magic link" }),
+                JSON.stringify({
+                    ok: false,
+                    error: `Failed to send invite email: ${inviteError.message || JSON.stringify(inviteError)}`,
+                    details: inviteError
+                }),
                 { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
         }
 
-        // The magic link is sent automatically by Supabase via the configured SMTP
-        // We don't need to send it manually - Supabase handles email delivery
-
-        console.log(`Invite created for ${email} to join ${schoolName} as ${role}`);
+        console.log(`Invite sent for ${email} to join ${schoolName} as ${role}`);
 
         return new Response(
             JSON.stringify({
                 ok: true,
                 message: `Invite sent to ${email}`,
-                invite_id: invite.id,
+                invite_id: inviteId,
             }),
             { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );

@@ -31,6 +31,12 @@ export function ProtectedRoute({ children, requiredRoles }: ProtectedRouteProps)
 
     const { signOut } = useAuth();
 
+    // Explicitly allow accept-invite route to bypass school checks
+    // This is a safety measure in case the component is wrapped or accessed oddly
+    if (location.pathname === '/accept-invite') {
+        return <>{children}</>;
+    }
+
     // No school membership - show error instead of redirecting to deleted onboarding
     if (!hasSchool) {
         return (

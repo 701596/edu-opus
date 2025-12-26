@@ -37,6 +37,9 @@ WHERE used_at IS NULL;
 
 ALTER TABLE public.staff_invites ENABLE ROW LEVEL SECURITY;
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.staff_invites TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.staff_invites TO service_role;
+
 -- Principals can manage their school's invites
 CREATE POLICY "Principals can manage their school invites" ON public.staff_invites
   FOR ALL USING (
@@ -51,7 +54,7 @@ CREATE POLICY "Principals can manage their school invites" ON public.staff_invit
 -- Users can read their own invite by email (for accept flow)
 CREATE POLICY "Users can read their own invite" ON public.staff_invites
   FOR SELECT USING (
-    email = (SELECT email FROM auth.users WHERE id = auth.uid())
+    email = (auth.jwt() ->> 'email')
     AND used_at IS NULL
     AND expires_at > now()
   );

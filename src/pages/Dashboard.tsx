@@ -7,6 +7,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import SystemStatus from '@/components/SystemStatus';
 import { AIChatBox } from '@/components/ai/AIChatBox';
 import { useFinancialData } from '@/hooks/useFinancialData';
+import { useRole } from '@/contexts/RoleContext';
 
 interface DashboardStats {
   totalStudents: number;
@@ -42,6 +43,7 @@ const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const { formatAmount } = useCurrency();
+  const { isPrincipal, currentSchool } = useRole();
 
   // Derived financial data (time-based, server-driven, tenant-scoped)
   const { data: financialData, isLoading: financialLoading, error: financialError } = useFinancialData();

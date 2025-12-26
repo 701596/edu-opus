@@ -60,6 +60,12 @@ export const StaffInviteDialog = ({ schoolId, onInviteSent }: StaffInviteDialogP
             return;
         }
 
+        if (!schoolId) {
+            toast.error('School context missing. Please refresh the page.');
+            console.error('Missing schoolId in StaffInviteDialog');
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {

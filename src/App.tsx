@@ -21,7 +21,8 @@ import RemainingFees from "./pages/RemainingFees";
 import RateLimitAdmin from "./pages/RateLimitAdmin";
 import Attendance from "./pages/Attendance";
 import SuperAI from "./pages/SuperAI";
-import AcceptInvite from "./pages/AcceptInvite";
+// Route removed: /accept-invite
+import Admin from "./pages/Admin";
 
 import NotFound from "./pages/NotFound";
 
@@ -42,7 +43,7 @@ const App = () => (
                 <Route path="/auth" element={<Auth />} />
 
                 {/* Accept Invite - Public route for magic link */}
-                <Route path="/accept-invite" element={<AcceptInvite />} />
+        // Route removed: /accept-invite
 
 
                 {/* Protected Routes */}
@@ -102,6 +103,11 @@ const App = () => (
                 } />
 
                 {/* Admin Routes */}
+                <Route path="/admin" element={
+                  <PrincipalRoute>
+                    <Layout><Admin /></Layout>
+                  </PrincipalRoute>
+                } />
                 <Route path="/admin/rate-limits" element={
                   <PrincipalRoute>
                     <Layout><RateLimitAdmin /></Layout>

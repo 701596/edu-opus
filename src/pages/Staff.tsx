@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, Edit, Trash2, Briefcase, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useCurrency } from '@/contexts/CurrencyContext';
+import { useRole } from '@/contexts/RoleContext';
 import { StaffBatchImport } from '@/components/StaffBatchImport';
 import { BulkEditStaff } from '@/components/BulkEditStaff';
 import { useSearchParams } from 'react-router-dom';
@@ -47,6 +48,7 @@ type Staff = z.infer<typeof staffSchema> & {
 
 const Staff = () => {
   const { user } = useAuth();
+  const { currentSchool } = useRole();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -425,7 +427,7 @@ const Staff = () => {
           <p className="text-muted-foreground">Manage staff members and employees</p>
         </div>
         <div className="flex gap-2">
-          <StaffInviteDialog schoolId={localStorage.getItem('currentSchoolId') || ''} onInviteSent={fetchStaff} />
+          {/* Staff Invite moved to Dashboard/Admin view */}
           <BulkEditStaff staff={staff} onEditComplete={fetchStaff} />
           <StaffBatchImport onImportComplete={fetchStaff} />
           <Dialog open={isDialogOpen} onOpenChange={handleDialogChange}>
